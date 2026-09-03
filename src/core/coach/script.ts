@@ -8,15 +8,20 @@ import type { IntensityLabelKey } from '../intensity/intensity';
  */
 export interface CoachScript {
   readonly numbers: readonly string[]; // index 0..N
+  readonly greeting: (name: string | undefined, workout: string) => string;
   readonly getReady: (exercise: string, target: string) => string;
   readonly nextUp: (exercise: string) => string;
   readonly repsTarget: (reps: number) => string;
   readonly timeTarget: (seconds: number) => string;
   readonly setOf: (set: number, total: number) => string;
+  readonly roundOf: (round: number, total: number) => string;
   readonly go: string;
   readonly lastRep: string;
+  readonly lastTwo: string; // "two more"
   readonly halfway: string;
   readonly setDone: string;
+  readonly setDoneVariants: readonly string[];
+  readonly exerciseDone: (exercise: string) => string;
   readonly rest: (seconds: number) => string;
   readonly restEnding: string; // spoken at ~3 s left
   readonly restSkipped: string;
@@ -24,10 +29,24 @@ export interface CoachScript {
   readonly paused: string;
   readonly resumed: string;
   readonly intensity: (label: IntensityLabelKey) => string;
+  readonly intensityUpReps: (reps: number) => string;
+  readonly intensityDownReps: (reps: number) => string;
   readonly finished: string;
+  readonly finishedWithName: (name: string) => string;
   readonly aborted: string;
   readonly timeLeft: (seconds: number) => string;
+  readonly setsLeft: (sets: number) => string;
+  readonly lastSet: string;
+  readonly lastExercise: string;
+  readonly blockStart: (block: string) => string;
+  readonly breatheOut: string;
+  readonly breatheIn: string;
+  readonly holdCues: readonly string[]; // for isometric holds
   readonly motivation: readonly string[];
+  readonly motivationEarly: readonly string[]; // first half of a set
+  readonly motivationLate: readonly string[]; // last reps
+  readonly motivationWithName: readonly ((name: string) => string)[];
+  readonly restTalk: readonly string[]; // said during longer rests
   readonly intensityLabels: Readonly<Record<IntensityLabelKey, string>>;
 }
 
@@ -61,15 +80,21 @@ const EN_LABELS: Record<IntensityLabelKey, string> = {
 
 const sv: CoachScript = {
   numbers: NUMBERS_SV,
+  greeting: (name, workout) =>
+    name ? `Hej ${name}! Dags för ${workout}. Jag räknar, du kör.` : `Dags för ${workout}. Jag räknar, du kör.`,
   getReady: (exercise, target) => `Nästa: ${exercise}. ${target}. Gör dig redo.`,
   nextUp: (exercise) => `Nästa övning: ${exercise}.`,
   repsTarget: (reps) => `${reps} repetitioner`,
   timeTarget: (seconds) => `${seconds} sekunder`,
   setOf: (set, total) => `Set ${set} av ${total}.`,
+  roundOf: (round, total) => `Varv ${round} av ${total}.`,
   go: 'Kör!',
   lastRep: 'Sista!',
+  lastTwo: 'Två kvar!',
   halfway: 'Halvvägs!',
   setDone: 'Bra jobbat.',
+  setDoneVariants: ['Bra jobbat.', 'Snyggt!', 'Så ska det se ut.', 'Grymt.', 'Där satt den.'],
+  exerciseDone: (exercise) => `${exercise} klart.`,
   rest: (seconds) => `Vila ${seconds} sekunder.`,
   restEnding: 'Gör dig redo.',
   restSkipped: 'Vi kör direkt.',
@@ -77,31 +102,59 @@ const sv: CoachScript = {
   paused: 'Pausat.',
   resumed: 'Vi fortsätter.',
   intensity: (label) => `Intensitet: ${SV_LABELS[label]}.`,
+  intensityUpReps: (reps) => `Vi ökar. ${reps} repetitioner nu.`,
+  intensityDownReps: (reps) => `Vi lugnar ner det. ${reps} repetitioner räcker.`,
   finished: 'Passet är klart. Grymt jobbat!',
+  finishedWithName: (name) => `Passet är klart. Grymt jobbat, ${name}!`,
   aborted: 'Passet avslutat.',
   timeLeft: (seconds) => `${seconds} kvar.`,
+  setsLeft: (sets) => (sets === 1 ? 'Ett set kvar.' : `${sets} set kvar.`),
+  lastSet: 'Sista setet. Ge allt!',
+  lastExercise: 'Sista övningen. Nu avslutar vi starkt.',
+  blockStart: (block) => `Nu börjar ${block}.`,
+  breatheOut: 'Andas ut.',
+  breatheIn: 'Andas in.',
+  holdCues: ['Håll kvar.', 'Andas lugnt.', 'Spänn magen.', 'Stark position.', 'Du står stadigt.'],
   motivation: [
     'Snyggt, håll tempot!',
     'Du äger det här!',
     'Fokus. Andas.',
     'Stark som tusan!',
     'Håll formen, det sitter!',
-    'En till, du fixar det!',
+  ],
+  motivationEarly: ['Bra tempo.', 'Kontrollerat.', 'Snygg form.', 'Precis så.'],
+  motivationLate: ['Kom igen nu!', 'Du fixar det!', 'Pressa på!', 'Nästan där!', 'Ge allt!'],
+  motivationWithName: [
+    (name) => `Kom igen ${name}!`,
+    (name) => `Starkt ${name}!`,
+    (name) => `Det här är ditt, ${name}.`,
+  ],
+  restTalk: [
+    'Skaka loss. Andas djupt.',
+    'Ta några djupa andetag.',
+    'Bra. Sänk axlarna, andas.',
+    'Drick lite vatten om du behöver.',
   ],
   intensityLabels: SV_LABELS,
 };
 
 const en: CoachScript = {
   numbers: NUMBERS_EN,
+  greeting: (name, workout) =>
+    name ? `Hey ${name}! Time for ${workout}. I count, you move.` : `Time for ${workout}. I count, you move.`,
   getReady: (exercise, target) => `Next: ${exercise}. ${target}. Get ready.`,
   nextUp: (exercise) => `Next exercise: ${exercise}.`,
   repsTarget: (reps) => `${reps} reps`,
   timeTarget: (seconds) => `${seconds} seconds`,
   setOf: (set, total) => `Set ${set} of ${total}.`,
+  roundOf: (round, total) => `Round ${round} of ${total}.`,
   go: 'Go!',
   lastRep: 'Last one!',
+  lastTwo: 'Two more!',
   halfway: 'Halfway!',
   setDone: 'Nice work.',
+  setDoneVariants: ['Nice work.', 'Clean!', 'That’s how it’s done.', 'Strong.', 'Nailed it.'],
+  exerciseDone: (exercise) => `${exercise} done.`,
   rest: (seconds) => `Rest ${seconds} seconds.`,
   restEnding: 'Get ready.',
   restSkipped: 'Straight in.',
@@ -109,16 +162,38 @@ const en: CoachScript = {
   paused: 'Paused.',
   resumed: 'Let’s continue.',
   intensity: (label) => `Intensity: ${EN_LABELS[label]}.`,
+  intensityUpReps: (reps) => `Stepping up. ${reps} reps now.`,
+  intensityDownReps: (reps) => `Easing off. ${reps} reps will do.`,
   finished: 'Workout complete. Awesome job!',
+  finishedWithName: (name) => `Workout complete. Awesome job, ${name}!`,
   aborted: 'Workout ended.',
   timeLeft: (seconds) => `${seconds} to go.`,
+  setsLeft: (sets) => (sets === 1 ? 'One set left.' : `${sets} sets left.`),
+  lastSet: 'Last set. Give it everything!',
+  lastExercise: 'Last exercise. Let’s finish strong.',
+  blockStart: (block) => `Starting ${block}.`,
+  breatheOut: 'Breathe out.',
+  breatheIn: 'Breathe in.',
+  holdCues: ['Hold it.', 'Breathe steady.', 'Brace the core.', 'Strong position.', 'You’re solid.'],
   motivation: [
     'Nice, keep the pace!',
     'You own this!',
     'Focus. Breathe.',
     'Strong as hell!',
     'Hold the form, you’ve got it!',
-    'One more, you can do it!',
+  ],
+  motivationEarly: ['Good tempo.', 'Controlled.', 'Clean form.', 'Just like that.'],
+  motivationLate: ['Come on!', 'You’ve got this!', 'Push!', 'Almost there!', 'Everything you’ve got!'],
+  motivationWithName: [
+    (name) => `Come on ${name}!`,
+    (name) => `Strong, ${name}!`,
+    (name) => `This one’s yours, ${name}.`,
+  ],
+  restTalk: [
+    'Shake it out. Deep breaths.',
+    'Take a few deep breaths.',
+    'Good. Drop the shoulders, breathe.',
+    'Grab some water if you need it.',
   ],
   intensityLabels: EN_LABELS,
 };

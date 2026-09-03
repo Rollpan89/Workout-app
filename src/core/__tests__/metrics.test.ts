@@ -28,13 +28,13 @@ function snapshot(overrides: Partial<SessionSnapshot['stats']> = {}): SessionSna
     stats: {
       completedSets: [
         { stepIndex: 0, exerciseId: 'squat', reps: 10, seconds: 20, intensity: 1.0 },
-        { stepIndex: 1, exerciseId: 'squat', reps: 10, seconds: 20, intensity: 1.2 },
-        { stepIndex: 2, exerciseId: 'plank', reps: 0, seconds: 30, intensity: 1.2 },
+        { stepIndex: 1, exerciseId: 'squat', reps: 10, seconds: 20, intensity: 1.25 },
+        { stepIndex: 2, exerciseId: 'plank', reps: 0, seconds: 30, intensity: 1.25 },
       ],
       workSeconds: 70,
       restSeconds: 30,
       pausedSeconds: 0,
-      intensitySecondsSum: 20 * 1.0 + 20 * 1.2 + 30 * 1.2 + 30 * 1.2,
+      intensitySecondsSum: 20 * 1.0 + 20 * 1.25 + 30 * 1.25 + 30 * 1.25,
       ...overrides,
     },
   };
@@ -69,11 +69,11 @@ describe('computeSessionMetrics', () => {
 
   it('normalises muscle impact so the top group is 1', () => {
     const m = computeSessionMetrics(snapshot(), profile, lookup);
-    // quads: 10×1×1.0 + 10×1×1.2 = 22; glutes: 0.8 × 22 = 17.6
-    // core (plank, time-based): 30 s / 1 s-per-rep × 1 × 1.2 = 36 → the max
+    // quads: 10×1×1.0 + 10×1×1.25 = 22.5; glutes: 0.8 × 22.5 = 18
+    // core (plank, time-based): 30 s / 1 s-per-rep × 1 × 1.25 = 37.5 → the max
     expect(m.muscleImpact.core).toBe(1);
-    expect(m.muscleImpact.quads).toBeCloseTo(22 / 36, 2);
-    expect(m.muscleImpact.glutes).toBeCloseTo(17.6 / 36, 2);
+    expect(m.muscleImpact.quads).toBeCloseTo(22.5 / 37.5, 2);
+    expect(m.muscleImpact.glutes).toBeCloseTo(18 / 37.5, 2);
   });
 
   it('keeps the ratio between groups of the same exercise', () => {
@@ -91,8 +91,8 @@ describe('computeSessionMetrics', () => {
 
   it('computes time-weighted average intensity', () => {
     const m = computeSessionMetrics(snapshot(), profile, lookup);
-    // (20 + 24 + 36 + 36) / 100 = 1.16
-    expect(m.averageIntensity).toBeCloseTo(1.16, 2);
+    // (20 + 25 + 37.5 + 37.5) / 100 = 1.2
+    expect(m.averageIntensity).toBeCloseTo(1.2, 2);
   });
 
   it('handles an empty session', () => {

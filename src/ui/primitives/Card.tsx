@@ -11,9 +11,9 @@ export interface CardProps extends Omit<PressableProps, 'style'> {
 }
 
 /** Elevated surface with an optional slanted accent stripe on the left. */
-export function Card({ style, accentColor, padding = spacing.lg, children, onPress, ...rest }: CardProps) {
+export function Card({ style, accentColor, padding = spacing.lg, children, onPress, testID, ...rest }: CardProps) {
   const body = (
-    <View style={[styles.card, { padding }, style]}>
+    <View style={[styles.card, { padding }, style]} testID={onPress ? undefined : testID}>
       {accentColor ? <View style={[styles.stripe, { backgroundColor: accentColor }]} /> : null}
       {children}
     </View>
@@ -24,6 +24,7 @@ export function Card({ style, accentColor, padding = spacing.lg, children, onPre
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => pressed && styles.pressed}
+      testID={testID}
       {...rest}
     >
       {body}
@@ -40,10 +41,10 @@ const styles = StyleSheet.create({
   },
   stripe: {
     position: 'absolute',
-    left: -30,
+    left: -6,
     top: -10,
     bottom: -10,
-    width: 42,
+    width: 12,
     transform: [{ skewX: '-12deg' }],
   },
   pressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },

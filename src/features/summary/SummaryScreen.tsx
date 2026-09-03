@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { getWorkout } from '@/content';
+import { findWorkout } from '@/state/customWorkoutStore';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDuration } from '@/i18n';
 import { useSessionStore } from '@/state/sessionStore';
@@ -23,7 +23,7 @@ export function SummaryScreen() {
 
   if (!result) return null;
 
-  const workout = getWorkout(result.workoutId);
+  const workout = findWorkout(result.workoutId);
 
   const done = () => {
     reset();

@@ -51,5 +51,22 @@ export interface Workout {
   /** Approximate duration at intensity 1.0 in minutes (display only). */
   readonly estimatedMinutes: number;
   /** Accent used by the UI for this program card. */
-  readonly accent: 'red' | 'orange';
+  readonly accent: WorkoutAccent;
+  /** True for workouts the user created or copied; they can be edited/deleted. */
+  readonly custom?: boolean;
+  /** ISO timestamp for custom workouts. */
+  readonly createdAt?: string;
 }
+
+/** Card / hero accent palette. Built-in programs pick one each; custom ones cycle. */
+export type WorkoutAccent = 'red' | 'orange' | 'yellow' | 'lime' | 'cyan' | 'violet' | 'magenta';
+
+export const WORKOUT_ACCENTS: readonly WorkoutAccent[] = [
+  'red',
+  'orange',
+  'yellow',
+  'lime',
+  'cyan',
+  'violet',
+  'magenta',
+] as const;

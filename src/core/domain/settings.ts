@@ -37,6 +37,10 @@ export interface VoiceSettings {
   readonly countEveryRep: boolean;
   /** Extra motivational lines between sets. */
   readonly motivation: boolean;
+  /** Technique cues interleaved between reps ("knäna utåt"). */
+  readonly techniqueCues: boolean;
+  /** Tempo words ("ner… upp") on slow strength movements. */
+  readonly tempoCues: boolean;
   readonly haptics: boolean;
 }
 
@@ -57,6 +61,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     pitch: 1.0,
     countEveryRep: true,
     motivation: true,
+    techniqueCues: true,
+    tempoCues: true,
     haptics: true,
   },
   profile: {

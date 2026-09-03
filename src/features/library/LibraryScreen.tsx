@@ -6,28 +6,30 @@ import { WORKOUTS } from '@/content';
 import type { Workout, WorkoutGoal } from '@/core/domain';
 import { summarizeHistory } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
+import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { useHistoryStore } from '@/state/historyStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors, spacing } from '@/theme';
 import { WorkoutCard } from '@/ui/components';
-import { Chip, Screen, SlantBox, Text } from '@/ui/primitives';
+import { Button, Chip, Screen, SectionTitle, SlantBox, Text } from '@/ui/primitives';
 
 const GOALS: readonly WorkoutGoal[] = ['strength', 'hypertrophy', 'endurance', 'fatLoss', 'mobility'];
 
 export function LibraryScreen() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, f } = useI18n();
   const [goal, setGoal] = useState<WorkoutGoal | 'all'>('all');
   const displayName = useSettingsStore((s) => s.settings.profile.displayName);
   const logs = useHistoryStore((s) => s.logs);
+  const customWorkouts = useCustomWorkoutStore((s) => s.workouts);
   const summary = useMemo(() => summarizeHistory(logs), [logs]);
 
-  const workouts = useMemo(
-    () => (goal === 'all' ? WORKOUTS : WORKOUTS.filter((w) => w.goal === goal)),
-    [goal],
-  );
+  const byGoal = (list: readonly Workout[]) => (goal === 'all' ? list : list.filter((w) => w.goal === goal));
+  const workouts = useMemo(() => byGoal(WORKOUTS), [goal]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mine = useMemo(() => byGoal(customWorkouts), [goal, customWorkouts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = (workout: Workout) => router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
+  const createNew = () => router.push({ pathname: '/builder/[id]', params: { id: 'new' } });
 
   return (
     <Screen>
@@ -76,13 +78,33 @@ export function LibraryScreen() {
         ))}
       </View>
 
-      {workouts.length === 0 ? (
+      {mine.length > 0 ? (
+        <>
+          <SectionTitle title={t.builder.mySection} hint={f(t.builder.customCount, { count: mine.length })} />
+          {mine.map((w) => (
+            <WorkoutCard key={w.id} workout={w} onPress={open} />
+          ))}
+          <SectionTitle title={t.builder.builtInSection} style={styles.sectionGap} />
+        </>
+      ) : null}
+
+      {workouts.length === 0 && mine.length === 0 ? (
         <Text variant="body" color={colors.textMuted} style={styles.empty}>
           {t.library.empty}
         </Text>
       ) : (
         workouts.map((w) => <WorkoutCard key={w.id} workout={w} onPress={open} />)
       )}
+
+      <Button
+        label={`+ ${t.builder.createCta}`}
+        variant="secondary"
+        size="lg"
+        fullWidth
+        onPress={createNew}
+        style={styles.createButton}
+        testID="create-workout"
+      />
     </Screen>
   );
 }
@@ -101,4 +123,6 @@ const styles = StyleSheet.create({
   statBox: { flex: 1, marginHorizontal: 6 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginBottom: spacing.lg, marginLeft: -3 },
   empty: { marginTop: spacing.xl, textAlign: 'center' },
+  sectionGap: { marginTop: spacing.md },
+  createButton: { marginTop: spacing.md },
 });

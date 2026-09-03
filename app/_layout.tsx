@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useAppFonts } from '@/hooks/useAppFonts';
+import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { useHistoryStore } from '@/state/historyStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors } from '@/theme';
@@ -19,13 +20,16 @@ export default function RootLayout() {
   const historyHydrated = useHistoryStore((s) => s.hydrated);
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
   const hydrateHistory = useHistoryStore((s) => s.hydrate);
+  const customHydrated = useCustomWorkoutStore((s) => s.hydrated);
+  const hydrateCustom = useCustomWorkoutStore((s) => s.hydrate);
 
   useEffect(() => {
     void hydrateSettings();
     void hydrateHistory();
-  }, [hydrateSettings, hydrateHistory]);
+    void hydrateCustom();
+  }, [hydrateSettings, hydrateHistory, hydrateCustom]);
 
-  const ready = (fontsLoaded || !!fontError) && settingsHydrated && historyHydrated;
+  const ready = (fontsLoaded || !!fontError) && settingsHydrated && historyHydrated && customHydrated;
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -47,6 +51,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="builder/[id]" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade' }} />
           <Stack.Screen name="summary" options={{ gestureEnabled: false, animation: 'fade' }} />
         </Stack>

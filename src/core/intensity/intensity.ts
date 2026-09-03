@@ -11,18 +11,18 @@ import type { SetPrescription } from '../domain/workout';
  * The scale is discrete so that the coach can name each level out loud and
  * the user can reason about "one step up".
  */
-export const INTENSITY_LEVELS = [0.6, 0.8, 1.0, 1.2, 1.4] as const;
+export const INTENSITY_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5] as const;
 
 export type IntensityLevel = (typeof INTENSITY_LEVELS)[number];
 
 export type IntensityLabelKey = 'light' | 'easy' | 'normal' | 'hard' | 'max';
 
 export const INTENSITY_LABEL_KEYS: Readonly<Record<IntensityLevel, IntensityLabelKey>> = {
-  0.6: 'light',
-  0.8: 'easy',
+  0.5: 'light',
+  0.75: 'easy',
   1.0: 'normal',
-  1.2: 'hard',
-  1.4: 'max',
+  1.25: 'hard',
+  1.5: 'max',
 };
 
 export const DEFAULT_INTENSITY: IntensityLevel = 1.0;
@@ -53,9 +53,9 @@ export function intensityLabelKey(level: IntensityLevel): IntensityLabelKey {
 export function intensityForReadiness(readiness: ReadinessLevel): IntensityLevel {
   switch (readiness) {
     case 'low':
-      return 0.8;
+      return 0.75;
     case 'high':
-      return 1.2;
+      return 1.25;
     case 'normal':
     default:
       return 1.0;

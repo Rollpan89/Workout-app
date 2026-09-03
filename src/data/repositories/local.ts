@@ -1,12 +1,26 @@
 import { EXERCISES, getExercise, WORKOUTS } from '@/content';
-import { DEFAULT_SETTINGS, type AppSettings, type Exercise, type SessionLog, type Workout } from '@/core/domain';
+import {
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type CustomWorkoutDraft,
+  type Exercise,
+  type SessionLog,
+  type Workout,
+} from '@/core/domain';
 
 import type { KeyValueStore } from '../storage/KeyValueStore';
-import type { Repositories, SessionRepository, SettingsRepository, WorkoutRepository } from './types';
+import type {
+  CustomWorkoutRepository,
+  Repositories,
+  SessionRepository,
+  SettingsRepository,
+  WorkoutRepository,
+} from './types';
 
 const KEYS = {
   sessions: 'sessions',
   settings: 'settings',
+  customWorkouts: 'customWorkouts',
 } as const;
 
 /** Workouts ship with the app bundle, so this repository is fully in-memory. */
@@ -32,6 +46,33 @@ export class StaticWorkoutRepository implements WorkoutRepository {
     if (this.exercises === EXERCISES) return getExercise;
     const map = new Map(this.exercises.map((e) => [e.id, e]));
     return (id) => map.get(id);
+  }
+}
+
+export class LocalCustomWorkoutRepository implements CustomWorkoutRepository {
+  constructor(private readonly store: KeyValueStore) {}
+
+  async listDrafts(): Promise<readonly CustomWorkoutDraft[]> {
+    const drafts = (await this.store.get<CustomWorkoutDraft[]>(KEYS.customWorkouts)) ?? [];
+    return [...drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getDraft(id: string): Promise<CustomWorkoutDraft | undefined> {
+    const drafts = (await this.store.get<CustomWorkoutDraft[]>(KEYS.customWorkouts)) ?? [];
+    return drafts.find((d) => d.id === id);
+  }
+
+  async saveDraft(draft: CustomWorkoutDraft): Promise<void> {
+    const drafts = (await this.store.get<CustomWorkoutDraft[]>(KEYS.customWorkouts)) ?? [];
+    await this.store.set(KEYS.customWorkouts, [draft, ...drafts.filter((d) => d.id !== draft.id)]);
+  }
+
+  async deleteDraft(id: string): Promise<void> {
+    const drafts = (await this.store.get<CustomWorkoutDraft[]>(KEYS.customWorkouts)) ?? [];
+    await this.store.set(
+      KEYS.customWorkouts,
+      drafts.filter((d) => d.id !== id),
+    );
   }
 }
 
@@ -89,6 +130,7 @@ export function mergeSettings(stored: Partial<AppSettings> | undefined): AppSett
 export function createLocalRepositories(store: KeyValueStore): Repositories {
   return {
     workouts: new StaticWorkoutRepository(),
+    customWorkouts: new LocalCustomWorkoutRepository(store),
     sessions: new LocalSessionRepository(store),
     settings: new LocalSettingsRepository(store),
   };

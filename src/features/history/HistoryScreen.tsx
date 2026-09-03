@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Alert, Platform, StyleSheet, View } from 'react-native';
 
-import { getWorkout } from '@/content';
+import { findWorkout } from '@/state/customWorkoutStore';
 import { summarizeHistory } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDate, formatDuration } from '@/i18n';
 import { useHistoryStore } from '@/state/historyStore';
-import { colors, spacing } from '@/theme';
+import { accent, colors, spacing } from '@/theme';
 import { MuscleImpactBars, StatTile } from '@/ui/components';
 import { Button, Card, Screen, SectionTitle, Text } from '@/ui/primitives';
 
@@ -59,9 +59,14 @@ export function HistoryScreen() {
 
           <SectionTitle title={t.history.recent} />
           {logs.map((log) => {
-            const workout = getWorkout(log.workoutId);
+            const workout = findWorkout(log.workoutId);
             return (
-              <Card key={log.id} style={styles.row} padding={spacing.md} accentColor={log.completed ? colors.red : colors.textDim}>
+              <Card
+                key={log.id}
+                style={styles.row}
+                padding={spacing.md}
+                accentColor={log.completed ? accent[workout?.accent ?? 'red'].main : colors.textDim}
+              >
                 <View style={styles.rowHeader}>
                   <Text variant="h3" upper numberOfLines={1} style={styles.rowTitle}>
                     {workout ? lz(workout.title) : log.workoutId}

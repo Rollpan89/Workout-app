@@ -207,11 +207,11 @@ describe('SessionEngine – hands-free', () => {
     engine.tick(clock.now());
     expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 5 });
     engine.adjustIntensity(1);
-    expect(engine.snapshot.intensity).toBe(1.2);
-    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 6 });
+    expect(engine.snapshot.intensity).toBe(1.25);
+    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 6 }); // round(5 × 1.25)
     engine.adjustIntensity(1);
-    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 7 });
-    expect(log).toEqual(['intensity:1->1.2', 'intensity:1.2->1.4']);
+    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 8 }); // round(5 × 1.5)
+    expect(log).toEqual(['intensity:1->1.25', 'intensity:1.25->1.5']);
   });
 
   it('never lowers the target below reps already done', () => {
@@ -221,16 +221,16 @@ describe('SessionEngine – hands-free', () => {
       interactionLevel: 'handsFree',
       now: clock.now,
       getReadySeconds: 0,
-      intensity: 1.4,
+      intensity: 1.5,
     });
     engine.start();
     engine.tick(clock.now());
-    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 7 });
+    expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 8 });
     run(engine, clock, 10_100); // 5 reps done
     expect(engine.snapshot.repsDone).toBe(5);
-    engine.adjustIntensity(-1); // 1.2 → 6 reps
+    engine.adjustIntensity(-1); // 1.25 → 6 reps
     engine.adjustIntensity(-1); // 1.0 → 5 reps, equals done
-    engine.adjustIntensity(-1); // 0.8 → 4, clamped to 5
+    engine.adjustIntensity(-1); // 0.75 → 4, clamped to 5
     expect(engine.snapshot.target).toEqual({ kind: 'reps', reps: 5 });
   });
 
@@ -248,7 +248,7 @@ describe('SessionEngine – hands-free', () => {
     expect(engine.snapshot.phase).toBe('resting');
     expect(engine.snapshot.restTotalSeconds).toBe(10);
     engine.adjustIntensity(1);
-    expect(engine.snapshot.restTotalSeconds).toBe(8);
+    expect(engine.snapshot.restTotalSeconds).toBe(8); // round(10 / 1.25)
   });
 
   it('skipRest jumps straight to the next set', () => {

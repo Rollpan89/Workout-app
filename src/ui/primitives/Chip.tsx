@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radius, SLANT, spacing } from '@/theme';
+import { colors, onAccent, radius, SLANT, spacing } from '@/theme';
 
 import { Text } from './Text';
 
@@ -15,7 +15,7 @@ export interface ChipProps {
 
 export function Chip({ label, selected, onPress, color = colors.red, style, slanted = true }: ChipProps) {
   const bg = selected ? color : colors.surface;
-  const fg = selected ? colors.textOnAccent : colors.textMuted;
+  const fg = selected ? onAccent(color) : colors.textMuted;
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}

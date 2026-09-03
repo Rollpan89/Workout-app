@@ -28,14 +28,17 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 
 | Flöde | Status |
 |---|---|
-| Välj pass ur ett bibliotek av modulära program (7 färdiga) | ✅ |
+| Välj pass ur ett bibliotek av modulära program (7 färdiga, varje med egen färg) | ✅ |
+| **Skapa egna pass** i en enkel byggare, eller **kopiera & anpassa** ett färdigt program – redigera, radera, kör | ✅ |
 | Röstcoach räknar reps och vila i stadig takt, på svenska eller engelska | ✅ |
+| Coachen är **involverad**: teknik-cues mellan reps, tempo-ord på långsamma lyft, pepp mot slutet av setet (med ditt namn), varierat beröm, "X set kvar", vilo-prat | ✅ |
 | Tre interaktionsnivåer: **hands-free**, **assisterad**, **manuell** | ✅ |
-| Justera intensitet upp/ner **under** passet – reps, tid och vila skalas direkt | ✅ |
-| Dagsform-check innan start som föreslår startintensitet | ✅ |
+| Justera intensitet upp/ner **under** passet – reps, tid och vila skalas direkt, coachen säger vad det innebär ("13 repetitioner nu") | ✅ |
+| Dagsform-check innan start som föreslår startintensitet; **översikten räknar om reps/tid/vila live** | ✅ |
+| Tryck på en övning i översikten → **steg-för-steg-instruktioner**, vanliga fel, coachens cues, tempo, muskler | ✅ |
 | Automatisk beräkning av kalorier (MET-baserad) och muskelpåverkan vid avslut | ✅ |
 | Historik med streak, totaler och muskelbalans | ✅ |
-| Inställningar: språk, röst (tempo, räkna varje rep, pepp), haptik, profil | ✅ |
+| Inställningar: språk, röst (tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning), haptik, profil | ✅ |
 | Håller skärmen tänd under pass | ✅ |
 | Data sparas lokalt, med repository-lager förberett för backend | ✅ |
 
@@ -68,21 +71,22 @@ Appen är uppdelad i **lager** med strikt beroenderiktning: pilarna pekar alltid
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  app/               expo-router – filbaserade routes (tunna wrappers)     │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  src/features/      Skärmar (Library, WorkoutDetail, Session, Summary,  │
-│                     History, Settings) – komponerar UI + state           │
+│  src/features/      Skärmar (Library, WorkoutDetail, WorkoutBuilder,    │
+│                     Session, Summary, History, Settings)                 │
 ├──────────────────────────────────────────────────────────────────────────┤
 │  src/ui/            Designsystem: primitives (Text, Button, ProgressBar…) │
 │                     + domänkomponenter (WorkoutCard, IntensityMeter…)    │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  src/state/         Zustand-stores: settings, history, session           │
-│                     (session-storen äger motor + coach-instansen)        │
+│  src/state/         Zustand-stores: settings, history, customWorkouts,  │
+│                     session (session-storen äger motor + coach)          │
 ├─────────────────────────────┬────────────────────────────────────────────┤
 │  src/adapters/              │  src/data/                                 │
 │  Plattformsbryggor:         │  Repository-gränssnitt + lokala            │
 │  ExpoSpeech (TTS), haptics  │  implementationer (AsyncStorage)           │
 ├─────────────────────────────┴────────────────────────────────────────────┤
 │  src/core/          REN TYPESCRIPT – inga React/Expo-imports              │
-│    domain/          Typer: Exercise, Workout, Session, Settings          │
+│    domain/          Typer: Exercise, Workout, Session, Settings,         │
+│                     CustomWorkoutDraft (+ kompilering till Workout)      │
 │    engine/          Planner + SessionEngine (tillståndsmaskin)           │
 │    coach/           Coach (event → tal), skript per språk, SpeechPort    │
 │    intensity/       Intensitetsskala och skalningsregler                 │
@@ -107,6 +111,12 @@ Appen är uppdelad i **lager** med strikt beroenderiktning: pilarna pekar alltid
 ## Modulerna i detalj
 
 ### `src/core/domain` – domänmodellen
+
+Utöver grundtyperna finns:
+
+- `ExerciseInstructions` på varje övning: `steps` (så gör du), `mistakes` (vanliga fel), `coachCues` (korta cues coachen roterar mellan), `tempo { down, up }` för tempo-räkning. Allt tvåspråkigt via `lz(sv, en)`.
+- `WorkoutAccent` (7 färger) + `Workout.custom`/`createdAt` för egna pass.
+- `customWorkout.ts` – **utkastmodellen för egna pass** (`CustomWorkoutDraft`): en platt, redigerbar lista av övningar med set, reps-eller-sekunder och vila. `compileDraft()` kompilerar utkastet till en vanlig `Workout` (ett `main`-block, härledd utrustning/muskelfokus/tid, `custom: true`), så planner, motor, coach, mätvärden och summering behöver inte veta om att passet är egenbyggt. `draftFromWorkout()` plattar ut vilket pass som helst (varv expanderas) för "kopiera & anpassa". `validateDraft()` + `DRAFT_LIMITS` sätter gränserna.
 
 | Fil | Innehåll |
 |---|---|
@@ -161,14 +171,28 @@ Motorn hanterar även *glesa ticks* (appen låg i bakgrunden): missade reps "hin
 | Fil | Roll |
 |---|---|
 | `SpeechPort.ts` | Gränssnittet `speak(utterance)` / `stop()` / `isSpeaking()`. Utterance bär `priority: 'interrupt' \| 'queue' \| 'drop'`. `SilentSpeech` för tester och avstängd röst. |
-| `script.ts` | **Allt coachen kan säga**, per språk. Siffror stavas ut ("tre", "three") för krispig TTS. Motiverande repliker. Intensitetsetiketter. |
+| `script.ts` | **Allt coachen kan säga**, per språk. Siffror stavas ut ("tre", "three") för krispig TTS. Hälsning med namn, varierat beröm, tidig/sen pepp, personliga repliker, vilo-prat, hold-cues, intensitetsförklaringar. |
 | `Coach.ts` | Prenumererar på motorns events och väljer vad som sägs och med vilken prioritet. Repräkning *avbryter* (måste vara i takt), instruktioner *köas*, pepp *droppas* om upptagen. |
 
 Prioritetsmodellen är nyckeln till att räkningen känns stadig: "sju" får aldrig vänta på att en lång mening ska talas klart.
 
+**Involveringsmodellen för ett rep-set** (set med minst 6 reps; kortare set får bara siffror):
+
+```
+"Set 2 av 3."  "Sista setet. Ge allt!"  "Kör!"
+ 1  2  3 ──► teknik-cue efter var 3:e rep i första halvan ("Knäna utåt.")
+             långsamma lyft (≥ 3 s/rep med tempo-data): "ner" mitt i rep-fönstret
+ halvvägs ─► "Halvvägs!" + kort beröm ("Snygg form.")
+ 6  7  8 ──► pepp i andra halvan, ibland med namn ("Kom igen Anna!")
+"Två kvar!"  "Sista!"
+ beröm (varieras) ─► "Knäböj klart." / "Ett set kvar." / "Nästa övning: …" ─► vilo-prat
+```
+
+Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues och tempo-räkning kan stängas av var för sig i Inställningar.
+
 ### `src/core/intensity` – intensitetsskalan
 
-Fem diskreta nivåer `0.6 / 0.8 / 1.0 / 1.2 / 1.4` (lätt → max). Skalar **volym** (reps, sekunder) proportionellt och **vila** omvänt. Räknetakten (`secondsPerRep`) påverkas medvetet *inte* – en förutsägbar rytm är det som gör ljudräkning möjlig.
+Fem diskreta nivåer `0.5 / 0.75 / 1.0 / 1.25 / 1.5` (lätt → max) – ett steg ska *kännas*: 10 reps blir 13 på "hård" och 15 på "max". Skalar **volym** (reps, sekunder) proportionellt och **vila** omvänt. Räknetakten (`secondsPerRep`) påverkas medvetet *inte* – en förutsägbar rytm är det som gör ljudräkning möjlig.
 
 ### `src/core/metrics` – beräkningar i bakgrunden
 
@@ -189,6 +213,7 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 |---|---|
 | `settingsStore` | `AppSettings`, hydrering från repo, persisterar vid varje ändring |
 | `historyStore` | `SessionLog[]`, optimistisk uppdatering |
+| `customWorkoutStore` | Användarens utkast + deras kompilerade `Workout`-versioner. `save`/`remove`/`newDraft`/`duplicate`. Exporterar `findWorkout(id)`/`useWorkout(id)` som slår upp **både** inbyggda och egna pass – används av detalj, summering och historik. |
 | `sessionStore` | **Äger körtidsobjekten** (`SessionEngine`, `Coach`, `setInterval`) utanför React-state. Exponerar `snapshot` + actions. När motorn blir `finished` byggs `SessionLog` och sparas via `historyStore`. |
 
 ### `src/ui` – designsystem
@@ -200,8 +225,9 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 
 | Skärm | Route | Roll |
 |---|---|---|
-| `LibraryScreen` | `/` | Bibliotek med målfilter, streak/summering |
-| `WorkoutDetailScreen` | `/workout/[id]` | Översikt, dagsform → startintensitet, interaktionsnivå, **Starta** |
+| `LibraryScreen` | `/` | Bibliotek med målfilter, streak/summering, sektionen **Mina pass**, "Skapa eget pass" |
+| `WorkoutDetailScreen` | `/workout/[id]` | Dagsform → startintensitet, **live-skalad översikt** (tryck på en övning → `ExerciseSheet`), interaktionsnivå, **Starta**; "Kopiera & anpassa" på alla pass, "Redigera"/"Radera" på egna |
+| `WorkoutBuilderScreen` + `ExercisePicker` + `DraftExerciseRow` | `/builder/[id]` | Byggaren: namn, färg, mål, nivå, övningslista med steppers (set / reps eller sekunder / vila), reps↔tid, ordning, info-ark, vila mellan övningar, validering. `id = new` (tomt), `new?from=<id>` (kopia) eller `<eget id>` (redigera) |
 | `SessionScreen` + `PhaseDisplay` | `/session` | Det aktiva passet: jättesiffra, fas, progress, intensitet, kontroller |
 | `SummaryScreen` | `/summary` | Kalorier, tid, reps, set, snittintensitet, muskelpåverkan |
 | `HistoryScreen` | `/history` | Totaler, streak, muskelbalans, lista |
@@ -254,7 +280,7 @@ Konkret exempel, hands-free, *Knäböj 2×5*:
 | 70 | `restTick` 10 … 3,2,1 | "10 kvar." … "Gör dig redo." "två" "ett" | 10 … 1 |
 | 80 | `setStarted` (samma övning → ingen ny annonsering) | "Set 2 av 2." "Kör!" | 0 / 5 |
 
-Om användaren trycker **+** vid t = 10: `intensityChanged 1.0→1.2`, målet blir 6 reps direkt, coachen säger "Intensitet: hård.", nästa vila blir 50 s istället för 60.
+Om användaren trycker **+** vid t = 10: `intensityChanged 1.0→1.25`, målet blir 6 reps direkt, coachen säger "Intensitet: hård. Vi ökar. 6 repetitioner nu.", nästa vila blir 48 s istället för 60.
 
 ---
 
@@ -305,18 +331,20 @@ Färdiga program: **Full Body Blast**, **Lower Power**, **Upper Armour**, **HIIT
 
 ```
 Dagsform (readiness)   →   Startintensitet
-  Trött                →   0.8 (lugn)
-  Normal               →   1.0 (normal)
-  Laddad               →   1.2 (hård)
+  Trött                →   0.75 (lugn)
+  Normal               →   1.0  (normal)
+  Laddad               →   1.25 (hård)
 ```
 
 Under passet: **±** på `IntensityMeter`. Regler i `core/intensity/intensity.ts`:
 
-| | Formel | Exempel (1.2) |
-|---|---|---|
-| Reps | `round(reps × i)`, min 1 | 10 → 12 |
-| Tid | `round(s × i)`, min 5 | 30 → 36 s |
-| Vila | `round(s / i)`, 5–600 s | 60 → 50 s |
+| | Formel | Exempel (1.25) | Exempel (1.5) |
+|---|---|---|---|
+| Reps | `round(reps × i)`, min 1 | 10 → 13 | 10 → 15 |
+| Tid | `round(s × i)`, min 5 | 30 → 38 s | 30 → 45 s |
+| Vila | `round(s / i)`, 5–600 s | 60 → 48 s | 60 → 40 s |
+
+Samma funktioner (`resolvePrescription`, `resolveRestSeconds`) används av detaljskärmens **översikt**, så listan visar exakt det motorn kommer att köra: `3 × 13 (10)` med grundvärdet i parentes när det skiljer sig.
 
 Motorn räknar aldrig ner ett mål under det antal reps som redan är gjorda, och förkortar aldrig en pågående vila till mindre än vad som redan gått.
 
@@ -360,6 +388,8 @@ Nivån väljs som standard i Inställningar och kan överridas per pass på deta
 
 ## Datalagring & backend-förberedelse
 
+Nycklar under `pulsecoach:v1:`: `settings`, `sessions`, `customWorkouts`. Egna pass lagras som *utkast* (`CustomWorkoutDraft`) – inte som kompilerade `Workout` – så att redigeringsmodellen kan utvecklas utan att gamla data blir oläsbara. `CustomWorkoutRepository` (`listDrafts/getDraft/saveDraft/deleteDraft`) är det fjärde gränssnittet i `Repositories`.
+
 Appen använder **inget API idag** – all data ligger lokalt i AsyncStorage under namnrymden `pulsecoach:v1:`. Men UI och stores pratar aldrig direkt med lagringen; de går via gränssnitt i `src/data/repositories/types.ts`:
 
 ```ts
@@ -387,6 +417,8 @@ Rekommenderad väg när backend kommer: behåll de lokala repositories som cache
 ---
 
 ## Designsystem
+
+**Färgpalett för kort:** sju accenter – röd, orange, gul, lime, cyan, violett, magenta – var och en med `main`/`deep`/`soft` och en `on`-färg (mörk text på gul/lime/cyan, vit på övriga). `onAccent(hex)` i `theme/tokens.ts` väljer läsbar textfärg för valfri färg; `Chip` och `Button color=` använder den automatiskt. Varje färdigt program har sin egen färg; egna pass får den minst använda färgen (`nextAccent`) men kan bytas i byggaren.
 
 Tema: **Hög energi.** Mörkgrå bas, explosiva accenter, snedställda former, kursiv sportig typografi, tjocka progressbars.
 
@@ -430,11 +462,13 @@ npm test
 | `core/__tests__/planner.test.ts` | Utplattning, varv, vila-regler, felhantering |
 | `core/__tests__/intensity.test.ts` | Skala, klämning, readiness-mappning |
 | `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, paus, intensitet mitt i set, alla tre interaktionsnivåer |
-| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken |
+| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar |
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik, plus assisterat läge på engelska. Endast TTS/haptik/lagring/typsnitt mockas. |
+| `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, kopiering med varv, repository-CRUD |
+| `core/__tests__/theme.test.ts` | Paletten är komplett, kontrasthjälparen väljer rätt textfärg |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera. Endast TTS/haptik/lagring/typsnitt mockas. |
 
-56 tester, ~4 s. Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+84 tester, ~7 s. Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 
@@ -471,8 +505,9 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 - **Bakgrundsljud på iOS** kräver `UIBackgroundModes: audio` (finns i `app.json`) *och* en aktiv audiosession; det behöver verifieras i en dev-build eftersom Expo Go begränsar bakgrundskörning.
 - **Röstkvalitet** beror helt på enhetens TTS. En inspelad röstpack via `SpeechPort` skulle ge ett mer premium-intryck.
 - **Kalorier** är uppskattningar (MET-modell); ingen pulsdata.
-- **Ingen redigering av program i appen** – innehållet är kod. Modellen är dock redo för att lagras och redigeras som JSON.
-- **Kandidater för nästa iteration:** egna program, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret, widgets/Live Activities för vilotimern.
+- **Egna pass är enkla:** en platt lista (inga block/varv) – medvetet, för att byggaren ska vara snabb att använda. Modellen kompileras till samma `Workout`-form som de färdiga programmen, så block/varv kan läggas till i utkastet senare utan att röra motorn.
+- **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
+- **Kandidater för nästa iteration:** egna övningar, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret (utkasten är redan JSON), widgets/Live Activities för vilotimern.
 
 ---
 
@@ -483,18 +518,19 @@ app/                      expo-router routes
   _layout.tsx             fonts, hydrering, Stack
   (tabs)/                 index (bibliotek), history, settings
   workout/[id].tsx        detalj
+  builder/[id].tsx        byggare för egna pass (new | new?from=<id> | <eget id>)
   session.tsx  summary.tsx
 src/
   core/                   ren TS: domain, engine, coach, intensity, metrics, utils
   content/                exercises, blocks, workouts
   data/                   repositories (types, local), storage (KeyValueStore, AsyncStorage)
   adapters/               speech/ExpoSpeech, haptics
-  state/                  settingsStore, historyStore, sessionStore
+  state/                  settingsStore, historyStore, customWorkoutStore, sessionStore
   hooks/                  useI18n, useAppFonts
   i18n/                   sv, en, format-hjälpare
   theme/                  tokens
-  ui/                     primitives, components
-  features/               library, workout-detail, session, summary, history, settings
+  ui/                     primitives, components (WorkoutCard, ExerciseSheet, IntensityMeter, …)
+  features/               library, workout-detail, workout-builder, session, summary, history, settings
   __tests__/              flow.e2e.test.tsx
 jest.config.js  jest.setup.ts  babel.config.js  metro.config.js  tsconfig.json  app.json
 ```

@@ -26,6 +26,20 @@ export const colors = {
   orangeDeep: '#D65F00',
   orangeSoft: 'rgba(255, 122, 0, 0.16)',
   yellow: '#FFC400',
+  yellowDeep: '#D19E00',
+  yellowSoft: 'rgba(255, 196, 0, 0.16)',
+  lime: '#B6FF2A',
+  limeDeep: '#7FC400',
+  limeSoft: 'rgba(182, 255, 42, 0.16)',
+  cyan: '#2AE6FF',
+  cyanDeep: '#00B3CC',
+  cyanSoft: 'rgba(42, 230, 255, 0.16)',
+  violet: '#8A5CFF',
+  violetDeep: '#5E33D6',
+  violetSoft: 'rgba(138, 92, 255, 0.16)',
+  magenta: '#FF2AC6',
+  magentaDeep: '#C4148F',
+  magentaSoft: 'rgba(255, 42, 198, 0.16)',
 
   // Semantic
   success: '#2ADB7A',
@@ -37,12 +51,40 @@ export const colors = {
   overlay: 'rgba(0, 0, 0, 0.6)',
 } as const;
 
-export type AccentName = 'red' | 'orange';
+export type AccentName = 'red' | 'orange' | 'yellow' | 'lime' | 'cyan' | 'violet' | 'magenta';
 
-export const accent: Record<AccentName, { main: string; deep: string; soft: string }> = {
-  red: { main: colors.red, deep: colors.redDeep, soft: colors.redSoft },
-  orange: { main: colors.orange, deep: colors.orangeDeep, soft: colors.orangeSoft },
+export interface AccentTone {
+  main: string;
+  deep: string;
+  soft: string;
+  /** Text colour that stays readable on `main`. */
+  on: string;
+}
+
+export const accent: Record<AccentName, AccentTone> = {
+  red: { main: colors.red, deep: colors.redDeep, soft: colors.redSoft, on: '#FFFFFF' },
+  orange: { main: colors.orange, deep: colors.orangeDeep, soft: colors.orangeSoft, on: '#FFFFFF' },
+  yellow: { main: colors.yellow, deep: colors.yellowDeep, soft: colors.yellowSoft, on: '#121214' },
+  lime: { main: colors.lime, deep: colors.limeDeep, soft: colors.limeSoft, on: '#121214' },
+  cyan: { main: colors.cyan, deep: colors.cyanDeep, soft: colors.cyanSoft, on: '#121214' },
+  violet: { main: colors.violet, deep: colors.violetDeep, soft: colors.violetSoft, on: '#FFFFFF' },
+  magenta: { main: colors.magenta, deep: colors.magentaDeep, soft: colors.magentaSoft, on: '#FFFFFF' },
 };
+
+/** Readable text colour for an arbitrary accent hex (falls back to white). */
+export function onAccent(hex: string): string {
+  const tone = Object.values(accent).find((a) => a.main === hex || a.deep === hex);
+  if (tone) return tone.on;
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#FFFFFF';
+  const n = parseInt(m[1]!, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  // Relative luminance (sRGB approx.) – dark text on bright colours.
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 160 ? '#121214' : '#FFFFFF';
+}
 
 export const spacing = {
   xxs: 2,

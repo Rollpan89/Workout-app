@@ -64,7 +64,7 @@ export const WORKOUTS: readonly Workout[] = [
     primaryMuscles: ['chest', 'back', 'shoulders', 'biceps', 'triceps'],
     blocks: [WARMUP_SHORT, UPPER_BODY_STRENGTH, COOLDOWN_STRETCH],
     estimatedMinutes: 40,
-    accent: 'red',
+    accent: 'violet',
   },
   {
     id: 'hiit-inferno',
@@ -80,7 +80,7 @@ export const WORKOUTS: readonly Workout[] = [
     primaryMuscles: ['fullBody', 'quads', 'core'],
     blocks: [WARMUP_SHORT, HIIT_CIRCUIT, FINISHER_BURN, COOLDOWN_STRETCH],
     estimatedMinutes: 22,
-    accent: 'orange',
+    accent: 'magenta',
   },
   {
     id: 'core-crusher',
@@ -96,7 +96,7 @@ export const WORKOUTS: readonly Workout[] = [
     primaryMuscles: ['core'],
     blocks: [WARMUP_SHORT, CORE_CRUSHER],
     estimatedMinutes: 15,
-    accent: 'red',
+    accent: 'yellow',
   },
   {
     id: 'kettlebell-engine',
@@ -112,7 +112,7 @@ export const WORKOUTS: readonly Workout[] = [
     primaryMuscles: ['glutes', 'hamstrings', 'quads', 'chest'],
     blocks: [WARMUP_DYNAMIC, KETTLEBELL_ENGINE, COOLDOWN_STRETCH],
     estimatedMinutes: 30,
-    accent: 'orange',
+    accent: 'cyan',
   },
   {
     id: 'mobility-reset',
@@ -128,7 +128,7 @@ export const WORKOUTS: readonly Workout[] = [
     primaryMuscles: ['back', 'hamstrings', 'glutes'],
     blocks: [MOBILITY_FLOW],
     estimatedMinutes: 12,
-    accent: 'red',
+    accent: 'lime',
   },
 ];
 

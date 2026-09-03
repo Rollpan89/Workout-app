@@ -90,13 +90,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       speech: settings.voice.enabled ? getSpeech() : new SilentSpeech(),
       locale: settings.locale,
       voice: settings.voice,
+      userName: settings.profile.displayName,
       haptic: settings.voice.haptics ? haptic : undefined,
     });
     coach.attach(engine);
 
     // Keep the coach in sync if the user changes voice/locale mid-session
     unsubscribeSettings = useSettingsStore.subscribe((state) => {
-      coach?.updateSettings(state.settings.locale, state.settings.voice);
+      coach?.updateSettings(state.settings.locale, state.settings.voice, state.settings.profile.displayName);
       if (state.settings.voice.enabled) coach?.setSpeech(getSpeech());
       else coach?.setSpeech(new SilentSpeech());
     });

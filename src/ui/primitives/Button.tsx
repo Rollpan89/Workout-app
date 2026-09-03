@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 
 import { haptic } from '@/adapters/haptics/haptics';
-import { colors, radius, SLANT, spacing } from '@/theme';
+import { colors, onAccent, radius, SLANT, spacing } from '@/theme';
 
 import { Text } from './Text';
 
@@ -18,6 +18,8 @@ export interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> 
   icon?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   hapticFeedback?: boolean;
+  /** Override the fill colour (primary variant); text colour adapts for contrast. */
+  color?: string;
 }
 
 const VARIANT_BG: Record<ButtonVariant, string> = {
@@ -53,12 +55,13 @@ export function Button({
   style,
   disabled,
   hapticFeedback = true,
+  color,
   onPress,
   ...rest
 }: ButtonProps) {
   const dims = SIZE[size];
-  const bg = VARIANT_BG[variant];
-  const fg = VARIANT_FG[variant];
+  const bg = color ?? VARIANT_BG[variant];
+  const fg = color ? onAccent(color) : VARIANT_FG[variant];
   const isGhost = variant === 'ghost';
 
   return (

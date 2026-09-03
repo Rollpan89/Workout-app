@@ -41,11 +41,27 @@ export type Equipment = 'none' | 'dumbbells' | 'barbell' | 'kettlebell' | 'bench
  */
 export type MuscleLoad = Partial<Readonly<Record<MuscleGroup, number>>>;
 
+/**
+ * Step-by-step instructions shown when the user taps an exercise in the
+ * workout overview. Also feeds the coach's technique cues during a set.
+ */
+export interface ExerciseInstructions {
+  /** Ordered how-to steps ("Stå axelbrett…", "Sänk höften…"). */
+  readonly steps: readonly LocalizedString[];
+  /** Common mistakes to avoid. */
+  readonly mistakes?: readonly LocalizedString[];
+  /** Short, rhythmic cues the coach can interleave between reps. */
+  readonly coachCues?: readonly LocalizedString[];
+  /** Optional tempo instruction for slow-tempo counting: eccentric/concentric words. */
+  readonly tempo?: { readonly down: LocalizedString; readonly up: LocalizedString };
+}
+
 export interface Exercise {
   readonly id: string;
   readonly name: LocalizedString;
   /** Short coaching cue spoken before the first rep, e.g. "Håll ryggen rak". */
   readonly cue?: LocalizedString;
+  readonly instructions?: ExerciseInstructions;
   readonly category: ExerciseCategory;
   readonly equipment: readonly Equipment[];
   readonly muscles: MuscleLoad;

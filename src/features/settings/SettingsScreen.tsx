@@ -90,10 +90,27 @@ export function SettingsScreen() {
             thumbColor={colors.text}
           />
         </Row>
-        <Row label={t.settings.motivation}>
+        <Row label={t.settings.motivation} hint={t.settings.motivationDesc}>
           <Switch
             value={settings.voice.motivation}
             onValueChange={(motivation) => updateVoice({ motivation })}
+            trackColor={{ true: colors.red, false: colors.surfaceHigh }}
+            thumbColor={colors.text}
+          />
+        </Row>
+        <Row label={t.settings.techniqueCues} hint={t.settings.techniqueCuesDesc}>
+          <Switch
+            value={settings.voice.techniqueCues}
+            onValueChange={(techniqueCues) => updateVoice({ techniqueCues })}
+            trackColor={{ true: colors.red, false: colors.surfaceHigh }}
+            thumbColor={colors.text}
+            testID="toggle-technique-cues"
+          />
+        </Row>
+        <Row label={t.settings.tempoCues} hint={t.settings.tempoCuesDesc}>
+          <Switch
+            value={settings.voice.tempoCues}
+            onValueChange={(tempoCues) => updateVoice({ tempoCues })}
             trackColor={{ true: colors.red, false: colors.surfaceHigh }}
             thumbColor={colors.text}
           />

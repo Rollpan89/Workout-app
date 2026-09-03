@@ -1,7 +1,7 @@
 import { resolveLocalized, SPEECH_LANGUAGE_TAG, type Locale } from '../domain/localized';
 import type { VoiceSettings } from '../domain/settings';
 import type { SessionEngine } from '../engine/SessionEngine';
-import type { PlanStep } from '../engine/types';
+import type { PlanStep, SessionSnapshot } from '../engine/types';
 import { intensityLabelKey } from '../intensity/intensity';
 import type { Unsubscribe } from '../utils/emitter';
 import { getCoachScript, spokenNumber, type CoachScript } from './script';
@@ -11,10 +11,20 @@ export interface CoachOptions {
   readonly speech: SpeechPort;
   readonly locale: Locale;
   readonly voice: VoiceSettings;
+  /** User's display name for personal lines; empty/undefined = generic. */
+  readonly userName?: string;
   /** Optional haptic hook, fired on each rep and at phase changes. */
   readonly haptic?: (kind: 'rep' | 'go' | 'done' | 'warn') => void;
+  /** Injectable randomness (tests pass a constant). */
   readonly random?: () => number;
 }
+
+/** Exercises with a cadence at or above this get "ner… upp" tempo words. */
+const TEMPO_CUE_MIN_SECONDS_PER_REP = 3;
+/** Minimum reps in a set before the coach starts talking between numbers. */
+const MIN_REPS_FOR_CHATTER = 6;
+/** Don't repeat a free-standing motivational line more often than this. */
+const MOTIVATION_COOLDOWN_MS = 40_000;
 
 /**
  * Coach
@@ -22,21 +32,46 @@ export interface CoachOptions {
  * Subscribes to SessionEngine events and turns them into speech. It is the
  * single place that decides *what* is said and *when* – the engine knows
  * nothing about audio, and the speech port knows nothing about workouts.
+ *
+ * Involvement model for a rep-based set (all numbers are `interrupt`, so the
+ * count is never late; everything else is `queue`/`drop` and yields to it):
+ *
+ *   ┌─ "Set 2 av 3." "Kör!"
+ *   ├─ 1 … first half   → technique cue after every 3rd rep ("Knäna utåt.")
+ *   │                     slow lifts: tempo word between numbers ("ner")
+ *   ├─ halfway          → "Halvvägs!" + short early-phase praise
+ *   ├─ second half      → motivational push, sometimes with the user's name
+ *   ├─ "Två kvar!" "Sista!"
+ *   └─ praise (varied) → "Ett set kvar." / "Nästa övning: …" → rest talk
+ *
+ * Time-based holds get periodic hold cues and breathing reminders instead.
+ * The tempo word is scheduled on the engine clock (via `snapshot` ticks), so
+ * it stays deterministic and pauses with the session.
  */
 export class Coach {
   private speech: SpeechPort;
   private locale: Locale;
   private voice: VoiceSettings;
+  private userName?: string;
   private script: CoachScript;
   private readonly haptic?: CoachOptions['haptic'];
   private readonly random: () => number;
   private subscriptions: Unsubscribe[] = [];
-  private lastMotivationAt = 0;
+  private planSteps: readonly PlanStep[] = [];
+  private lastMotivationAt = -Infinity;
+  private techniqueCueIndex = -1;
+  private lastPraiseIndex = -1;
+  private lastLateMotivationIndex = -1;
+  /** Pending tempo word: spoken once `workElapsedSeconds` passes `dueAt`. */
+  private pendingTempo?: { word: string; dueAt: number; stepIndex: number };
+  /** Greeting waiting to be merged into the first exercise announcement. */
+  private pendingGreeting?: string;
 
   constructor(options: CoachOptions) {
     this.speech = options.speech;
     this.locale = options.locale;
     this.voice = options.voice;
+    this.userName = normaliseName(options.userName);
     this.script = getCoachScript(options.locale);
     this.haptic = options.haptic;
     this.random = options.random ?? Math.random;
@@ -47,13 +82,38 @@ export class Coach {
     const { events } = engine;
 
     this.subscriptions.push(
+      events.on('started', ({ plan }) => {
+        this.planSteps = plan.steps;
+        this.techniqueCueIndex = -1;
+        this.lastMotivationAt = -Infinity;
+        // Spoken together with the first announcement (see below) so the
+        // intro can't be cut off by the countdown if the TTS is slow.
+        this.pendingGreeting = this.script.greeting(this.userName, resolveLocalized(plan.workout.title, this.locale));
+      }),
+
       events.on('exerciseAnnounced', ({ step, target }) => {
         const name = this.exerciseName(step);
         const targetText =
           target.kind === 'reps'
             ? this.script.repsTarget(target.reps)
             : this.script.timeTarget(target.seconds);
-        this.say(this.script.getReady(name, targetText), 'interrupt');
+
+        const prev = this.planSteps[step.index - 1];
+        const isNewBlock = prev !== undefined && prev.block.id !== step.block.id;
+        const isNewRound = prev !== undefined && prev.block.id === step.block.id && prev.round !== step.round;
+
+        if (isNewBlock) this.say(this.script.blockStart(resolveLocalized(step.block.title, this.locale)), 'queue');
+        if (isNewRound && step.rounds > 1) this.say(this.script.roundOf(step.round, step.rounds), 'queue');
+        if (this.isLastExercise(step) && this.planSteps.length > 1) this.say(this.script.lastExercise, 'queue');
+
+        const intro = this.script.getReady(name, targetText);
+        if (this.pendingGreeting) {
+          this.say(`${this.pendingGreeting} ${intro}`, 'interrupt');
+          this.pendingGreeting = undefined;
+        } else {
+          // Block/round lines were just queued – don't cut them off.
+          this.say(intro, isNewBlock || isNewRound ? 'queue' : 'interrupt');
+        }
         if (step.totalSets > 1) this.say(this.script.setOf(step.setNumber, step.totalSets), 'queue');
         const cue = step.exercise.cue;
         if (cue) this.say(resolveLocalized(cue, this.locale), 'queue');
@@ -64,63 +124,125 @@ export class Coach {
       }),
 
       events.on('awaitingUser', ({ step }) => {
-        // After the get-ready countdown the exercise has already been
-        // introduced, so only remind the user which set is next.
         if (step.totalSets > 1) {
           this.say(this.script.setOf(step.setNumber, step.totalSets), 'interrupt');
+          if (step.setNumber === step.totalSets) this.say(this.script.lastSet, 'queue');
           this.say(this.script.tapWhenReady, 'queue');
         } else {
           this.say(this.script.tapWhenReady, 'interrupt');
         }
       }),
 
-      events.on('setStarted', ({ step }) => {
+      events.on('setStarted', ({ step, target }) => {
         this.haptic?.('go');
-        // For sets after the first within an exercise, briefly say which set
-        if (step.setNumber > 1 && engine.snapshot.interactionLevel === 'handsFree') {
+        this.pendingTempo = undefined;
+        this.techniqueCueIndex = -1;
+        const isLastSet = step.totalSets > 1 && step.setNumber === step.totalSets;
+        const announcedAlready = engine.snapshot.interactionLevel !== 'handsFree' || step.setNumber === 1;
+
+        if (!announcedAlready) {
+          // Hands-free, set 2+: the engine skips the announcement, so we say it here.
           this.say(this.script.setOf(step.setNumber, step.totalSets), 'interrupt');
+          if (isLastSet) this.say(this.script.lastSet, 'queue');
           this.say(this.script.go, 'queue');
         } else {
           this.say(this.script.go, 'interrupt');
         }
+        if (target.kind === 'time' && target.seconds >= 20) this.say(this.script.breatheIn, 'drop');
       }),
 
-      events.on('rep', ({ rep, total }) => {
+      events.on('rep', ({ step, rep, total }) => {
         this.haptic?.('rep');
+        this.pendingTempo = undefined;
+
         if (rep === total && total > 1) {
           this.say(this.script.lastRep, 'interrupt');
           return;
         }
-        if (this.voice.countEveryRep || rep % 5 === 0 || rep === 1) {
-          this.say(spokenNumber(this.script, rep), 'interrupt');
+        if (rep === total - 1 && total >= MIN_REPS_FOR_CHATTER) {
+          this.say(this.script.lastTwo, 'interrupt');
+          return;
+        }
+
+        const speakNumber = this.voice.countEveryRep || rep % 5 === 0 || rep === 1;
+        if (speakNumber) this.say(spokenNumber(this.script, rep), 'interrupt');
+
+        if (total < MIN_REPS_FOR_CHATTER) return; // short sets: just count
+        const earlyPhase = rep <= Math.ceil(total / 2);
+        const cadence = step.exercise.secondsPerRep;
+
+        if (earlyPhase && this.voice.techniqueCues && rep % 3 === 0) {
+          const cue = this.nextTechniqueCue(step);
+          if (cue) this.say(cue, 'queue');
+          return;
+        }
+        // Push on the 2nd rep after halfway (and every 3rd after that) – leaves air after "Halvvägs!".
+        if (!earlyPhase && rep < total - 2 && this.voice.motivation && (rep - Math.ceil(total / 2)) % 3 === 2) {
+          this.say(this.pickLateMotivation(), 'queue');
+          return;
+        }
+        if (this.voice.tempoCues && cadence >= TEMPO_CUE_MIN_SECONDS_PER_REP && step.exercise.instructions?.tempo) {
+          // Eccentric word halfway through the rep window, on the engine clock.
+          const word = resolveLocalized(step.exercise.instructions.tempo.down, this.locale);
+          this.pendingTempo = {
+            word,
+            dueAt: engine.snapshot.workElapsedSeconds + cadence / 2,
+            stepIndex: step.index,
+          };
         }
       }),
 
-      events.on('workTick', ({ elapsed, total }) => {
+      events.on('snapshot', (snapshot) => this.onSnapshot(snapshot)),
+
+      events.on('workTick', ({ step, elapsed, total }) => {
         const remaining = total - elapsed;
-        // Count down the last three seconds, and call out 10 s left on long holds
         if (remaining > 0 && remaining <= 3) {
           this.say(spokenNumber(this.script, remaining), 'interrupt');
-        } else if (remaining === 10 && total >= 20) {
+          return;
+        }
+        if (remaining === 10 && total >= 20) {
           this.say(this.script.timeLeft(10), 'drop');
+          return;
+        }
+        // Long holds: a hold/technique cue every 8 s, a breathing reminder in between.
+        if (total >= 20 && elapsed > 0 && remaining > 5) {
+          if (elapsed % 8 === 0) {
+            const cue = this.voice.techniqueCues ? this.nextTechniqueCue(step) : undefined;
+            this.say(cue ?? this.pickFrom(this.script.holdCues), 'drop');
+          } else if (elapsed % 8 === 4 && this.voice.techniqueCues) {
+            this.say(elapsed % 16 === 4 ? this.script.breatheOut : this.script.breatheIn, 'drop');
+          }
         }
       }),
 
-      events.on('halfway', () => {
-        this.say(this.script.halfway, 'drop');
+      events.on('halfway', ({ step }) => {
+        this.say(this.script.halfway, 'queue');
+        if (this.voice.motivation && step.exercise.category !== 'mobility') {
+          this.say(this.pickFrom(this.script.motivationEarly), 'drop');
+        }
       }),
 
-      events.on('setCompleted', () => {
+      events.on('setCompleted', ({ step }) => {
         this.haptic?.('done');
-        this.say(this.script.setDone, 'interrupt');
+        this.pendingTempo = undefined;
+        this.say(this.nextPraise(), 'interrupt');
+        if (step.isLastSetOfExercise && step.totalSets > 1) {
+          this.say(this.script.exerciseDone(this.exerciseName(step)), 'queue');
+        }
       }),
 
       events.on('restStarted', ({ seconds, nextStep, step }) => {
         this.say(this.script.rest(seconds), 'queue');
-        if (nextStep && nextStep.exercise.id !== step.exercise.id) {
-          this.say(this.script.nextUp(this.exerciseName(nextStep)), 'queue');
+        if (nextStep) {
+          if (nextStep.exercise.id !== step.exercise.id) {
+            this.say(this.script.nextUp(this.exerciseName(nextStep)), 'queue');
+          } else {
+            const left = step.totalSets - step.setNumber;
+            if (left > 0) this.say(this.script.setsLeft(left), 'queue');
+          }
         }
-        this.maybeMotivate();
+        if (seconds >= 30) this.maybeRestTalk(engine.snapshot.sessionElapsedSeconds);
+        else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
       }),
 
       events.on('restTick', ({ remaining, total }) => {
@@ -133,12 +255,25 @@ export class Coach {
         }
       }),
 
-      events.on('intensityChanged', ({ to }) => {
+      events.on('intensityChanged', ({ from, to }) => {
         this.haptic?.('warn');
-        this.say(this.script.intensity(intensityLabelKey(to)), 'interrupt');
+        const snap = engine.snapshot;
+        const level = this.script.intensity(intensityLabelKey(to));
+        // While a rep set is active, also tell the user what the change *means*
+        // – in the same utterance so an interrupt can't split them.
+        if (snap.target?.kind === 'reps' && (snap.phase === 'working' || snap.phase === 'awaitingStart')) {
+          const meaning =
+            to > from
+              ? this.script.intensityUpReps(snap.target.reps)
+              : this.script.intensityDownReps(snap.target.reps);
+          this.say(`${level} ${meaning}`, 'interrupt');
+        } else {
+          this.say(level, 'interrupt');
+        }
       }),
 
       events.on('paused', () => {
+        this.pendingTempo = undefined;
         this.speech.stop();
         this.say(this.script.paused, 'interrupt');
       }),
@@ -149,7 +284,12 @@ export class Coach {
 
       events.on('finished', ({ completed }) => {
         this.haptic?.('done');
-        this.say(completed ? this.script.finished : this.script.aborted, 'interrupt');
+        this.pendingTempo = undefined;
+        if (!completed) {
+          this.say(this.script.aborted, 'interrupt');
+          return;
+        }
+        this.say(this.userName ? this.script.finishedWithName(this.userName) : this.script.finished, 'interrupt');
       }),
     );
   }
@@ -157,12 +297,16 @@ export class Coach {
   detach(): void {
     this.subscriptions.forEach((unsub) => unsub());
     this.subscriptions = [];
+    this.pendingTempo = undefined;
+    this.pendingGreeting = undefined;
+    this.planSteps = [];
     this.speech.stop();
   }
 
-  updateSettings(locale: Locale, voice: VoiceSettings): void {
+  updateSettings(locale: Locale, voice: VoiceSettings, userName?: string): void {
     this.locale = locale;
     this.voice = voice;
+    if (userName !== undefined) this.userName = normaliseName(userName);
     this.script = getCoachScript(locale);
   }
 
@@ -172,6 +316,19 @@ export class Coach {
   }
 
   /* ------------------------------------------------------------------ */
+
+  private onSnapshot(snapshot: SessionSnapshot): void {
+    const pending = this.pendingTempo;
+    if (!pending) return;
+    if (snapshot.phase !== 'working' || snapshot.stepIndex !== pending.stepIndex) {
+      this.pendingTempo = undefined;
+      return;
+    }
+    if (snapshot.workElapsedSeconds >= pending.dueAt) {
+      this.pendingTempo = undefined;
+      this.say(pending.word, 'drop');
+    }
+  }
 
   private say(text: string, priority: SpeechUtterance['priority']): void {
     if (!this.voice.enabled) return;
@@ -188,14 +345,66 @@ export class Coach {
     return resolveLocalized(step.exercise.name, this.locale);
   }
 
-  private maybeMotivate(): void {
-    if (!this.voice.motivation) return;
-    const now = Date.now();
-    // At most one motivational line per ~45 s, and not every time
-    if (now - this.lastMotivationAt < 45_000 || this.random() < 0.5) return;
-    this.lastMotivationAt = now;
-    const lines = this.script.motivation;
-    const line = lines[Math.floor(this.random() * lines.length)];
-    if (line) this.say(line, 'drop');
+  /** True when every remaining step belongs to the same exercise as `step`. */
+  private isLastExercise(step: PlanStep): boolean {
+    if (step.setNumber !== 1) return false;
+    return this.planSteps
+      .slice(step.index + 1)
+      .every((s) => s.exercise.id === step.exercise.id && s.block.id === step.block.id && s.round === step.round);
   }
+
+  /** Rotates through the exercise's technique cues, falling back to its main cue. */
+  private nextTechniqueCue(step: PlanStep): string | undefined {
+    const cues = step.exercise.instructions?.coachCues;
+    if (cues && cues.length > 0) {
+      this.techniqueCueIndex = (this.techniqueCueIndex + 1) % cues.length;
+      const cue = cues[this.techniqueCueIndex];
+      return cue ? resolveLocalized(cue, this.locale) : undefined;
+    }
+    return step.exercise.cue ? resolveLocalized(step.exercise.cue, this.locale) : undefined;
+  }
+
+  private nextPraise(): string {
+    const variants = this.script.setDoneVariants;
+    let idx = Math.floor(this.random() * variants.length) % variants.length;
+    if (idx === this.lastPraiseIndex) idx = (idx + 1) % variants.length;
+    this.lastPraiseIndex = idx;
+    return variants[idx] ?? this.script.setDone;
+  }
+
+  private pickFrom<T>(items: readonly T[]): T {
+    return items[Math.floor(this.random() * items.length) % items.length] as T;
+  }
+
+  private pickLateMotivation(): string {
+    if (this.userName && this.random() < 0.4) {
+      return this.pickFrom(this.script.motivationWithName)(this.userName);
+    }
+    const lines = this.script.motivationLate;
+    let idx = Math.floor(this.random() * lines.length) % lines.length;
+    if (idx === this.lastLateMotivationIndex) idx = (idx + 1) % lines.length;
+    this.lastLateMotivationIndex = idx;
+    return lines[idx] ?? '';
+  }
+
+  private maybeMotivate(sessionElapsedSeconds: number): void {
+    if (!this.voice.motivation) return;
+    const now = sessionElapsedSeconds * 1000;
+    if (now - this.lastMotivationAt < MOTIVATION_COOLDOWN_MS || this.random() < 0.5) return;
+    this.lastMotivationAt = now;
+    this.say(this.pickFrom(this.script.motivation), 'drop');
+  }
+
+  private maybeRestTalk(sessionElapsedSeconds: number): void {
+    if (!this.voice.motivation) return;
+    const now = sessionElapsedSeconds * 1000;
+    if (now - this.lastMotivationAt < MOTIVATION_COOLDOWN_MS) return;
+    this.lastMotivationAt = now;
+    this.say(this.pickFrom(this.script.restTalk), 'queue');
+  }
+}
+
+function normaliseName(name: string | undefined): string | undefined {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : undefined;
 }

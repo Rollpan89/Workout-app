@@ -1,4 +1,4 @@
-import type { AppSettings, Exercise, SessionLog, Workout } from '@/core/domain';
+import type { AppSettings, CustomWorkoutDraft, Exercise, SessionLog, Workout } from '@/core/domain';
 
 /**
  * Repository interfaces – the *only* contract the app layer depends on for
@@ -12,6 +12,18 @@ export interface WorkoutRepository {
   getExercise(id: string): Promise<Exercise | undefined>;
   /** Synchronous lookup used by the engine/metrics (content is preloaded). */
   exerciseLookup(): (id: string) => Exercise | undefined;
+}
+
+/**
+ * User-created workouts. Stored as editable drafts; `WorkoutRepository`
+ * compiles them into runnable `Workout`s so the rest of the app never has
+ * to distinguish built-in from custom.
+ */
+export interface CustomWorkoutRepository {
+  listDrafts(): Promise<readonly CustomWorkoutDraft[]>;
+  getDraft(id: string): Promise<CustomWorkoutDraft | undefined>;
+  saveDraft(draft: CustomWorkoutDraft): Promise<void>;
+  deleteDraft(id: string): Promise<void>;
 }
 
 export interface SessionRepository {
@@ -28,6 +40,7 @@ export interface SettingsRepository {
 
 export interface Repositories {
   readonly workouts: WorkoutRepository;
+  readonly customWorkouts: CustomWorkoutRepository;
   readonly sessions: SessionRepository;
   readonly settings: SettingsRepository;
 }
