@@ -17,7 +17,8 @@ export function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
   return (
     <Card accentColor={tone.main} onPress={() => onPress(workout)} style={styles.card} testID={`workout-${workout.id}`}>
       {/* Soft colour wash in the top-right corner so cards read as distinct at a glance */}
-      <View pointerEvents="none" style={[styles.wash, { backgroundColor: tone.deep }]} />
+      
+      
       {workout.custom ? (
         <View style={[styles.customTag, { borderColor: tone.main }]}>
           <Text variant="labelSmall" color={tone.main} upper>
@@ -35,6 +36,7 @@ export function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
           </Text>
         </View>
         <View style={[styles.badge, { backgroundColor: tone.main }]}>
+          <View pointerEvents="none" style={[styles.wash, { backgroundColor: tone.deep }]} />
           <Text variant="stat" color={tone.on} style={styles.badgeNumber}>
             {workout.estimatedMinutes}
           </Text>
@@ -55,14 +57,21 @@ export function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
 
 const styles = StyleSheet.create({
   card: { marginBottom: spacing.md },
+   linearGradient: {
+    flex: 1,
+    paddingLeft: 15,
+    paddingRight: 15,
+    borderRadius: 5,
+  },
   wash: {
     position: 'absolute',
-    right: -40,
-    top: -60,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    opacity: 0.22,
+    right: -105,
+    top: -105,
+    width: 210,
+    height: 210,
+    borderRadius: 210,
+    opacity: 0.12,
+    transform: [{ skewX: '12deg' }],
   },
   customTag: {
     alignSelf: 'flex-start',
@@ -73,7 +82,7 @@ const styles = StyleSheet.create({
     transform: [{ skewX: '-12deg' }],
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  titleWrap: { flex: 1, gap: 2 },
+  titleWrap: { flex: 1, gap: 2, paddingLeft: 6 },
   badge: {
     width: 64,
     height: 64,

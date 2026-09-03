@@ -122,13 +122,13 @@ export const fonts = {
 } as const;
 
 export const typography = {
-  hero: { fontFamily: fonts.display, fontSize: 64, lineHeight: 64, letterSpacing: -1 },
-  mega: { fontFamily: fonts.display, fontSize: 120, lineHeight: 120, letterSpacing: -3 },
-  h1: { fontFamily: fonts.display, fontSize: 40, lineHeight: 42, letterSpacing: -0.5 },
+  hero: { fontFamily: fonts.display, fontSize: 64, lineHeight: 64, },
+  mega: { fontFamily: fonts.display, fontSize: 120, lineHeight: 120, },
+  h1: { fontFamily: fonts.display, fontSize: 40, lineHeight: 42, },
   h2: { fontFamily: fonts.heading, fontSize: 28, lineHeight: 30 },
   h3: { fontFamily: fonts.heading, fontSize: 22, lineHeight: 24 },
-  label: { fontFamily: fonts.subheading, fontSize: 14, lineHeight: 16, letterSpacing: 1.5 },
-  labelSmall: { fontFamily: fonts.subheading, fontSize: 12, lineHeight: 14, letterSpacing: 1.2 },
+  label: { fontFamily: fonts.subheading, fontSize: 14, lineHeight: 16,  },
+  labelSmall: { fontFamily: fonts.subheading, fontSize: 12, lineHeight: 14,  },
   body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 22 },
   bodySmall: { fontFamily: fonts.body, fontSize: 14, lineHeight: 19 },
   bodyBold: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 22 },

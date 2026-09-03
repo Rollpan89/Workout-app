@@ -41,10 +41,10 @@ const styles = StyleSheet.create({
   },
   stripe: {
     position: 'absolute',
-    left: -6,
+    left: -27,
     top: -10,
     bottom: -10,
-    width: 12,
+    width: 32,
     transform: [{ skewX: '-12deg' }],
   },
   pressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },

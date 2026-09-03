@@ -162,11 +162,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 168,
     lineHeight: 176,
-    letterSpacing: -6,
     textAlign: 'center',
     includeFontPadding: false,
   },
-  bigSmall: { fontSize: 88, lineHeight: 96, letterSpacing: -2 },
+  bigSmall: { fontSize: 88, lineHeight: 96,  },
   bar: { marginTop: spacing.sm },
   cue: { marginTop: spacing.md, alignSelf: 'stretch' },
 });

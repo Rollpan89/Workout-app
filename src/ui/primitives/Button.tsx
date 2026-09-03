@@ -98,7 +98,7 @@ export function Button({
       />
       <View style={styles.content}>
         {icon ? <View style={styles.icon}>{icon}</View> : null}
-        <Text variant={dims.font} color={fg} upper style={styles.label} numberOfLines={1}>
+        <Text variant={dims.font} color={fg} upper style={styles.label}>
           {label}
         </Text>
       </View>
