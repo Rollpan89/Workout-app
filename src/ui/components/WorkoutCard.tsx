@@ -21,8 +21,52 @@ export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardP
   const [confirming, setConfirming] = useState(false);
   const manageable = !!workout.custom && (onEdit || onDelete);
 
+  // Edit/delete controls are rendered in the card *footer*: on web the
+  // pressable card is a <button>, and a <button> cannot contain a <button>.
+  const manageRow = manageable ? (
+    confirming ? (
+      <View style={styles.manageRow}>
+        <Text variant="bodySmall" color={colors.textMuted} style={styles.confirmText}>
+          {t.builder.deleteConfirm}
+        </Text>
+        <Button
+          label={t.common.no}
+          variant="secondary"
+          size="sm"
+          onPress={() => setConfirming(false)}
+          testID={`workout-${workout.id}-cancel-delete`}
+        />
+        <Button
+          label={t.common.yes}
+          variant="danger"
+          size="sm"
+          onPress={() => {
+            setConfirming(false);
+            onDelete?.(workout);
+          }}
+          testID={`workout-${workout.id}-confirm-delete`}
+        />
+      </View>
+    ) : (
+      <View style={styles.manageRow}>
+        {onEdit ? (
+          <Button label={t.builder.edit} variant="secondary" size="sm" onPress={() => onEdit(workout)} testID={`workout-${workout.id}-edit`} />
+        ) : null}
+        {onDelete ? (
+          <Button label={t.builder.delete} variant="ghost" size="sm" onPress={() => setConfirming(true)} testID={`workout-${workout.id}-delete`} />
+        ) : null}
+      </View>
+    )
+  ) : undefined;
+
   return (
-    <Card accentColor={tone.main} onPress={() => onPress(workout)} style={styles.card} testID={`workout-${workout.id}`}>
+    <Card
+      accentColor={tone.main}
+      onPress={() => onPress(workout)}
+      style={styles.card}
+      testID={`workout-${workout.id}`}
+      footer={manageRow}
+    >
       {/* Soft colour wash in the top-right corner so cards read as distinct at a glance */}
       
       
@@ -58,36 +102,6 @@ export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardP
         <Chip label={t.difficulty[workout.difficulty]} />
         <Chip label={t.equipment[workout.equipment[0] ?? 'none']} />
       </View>
-
-      {manageable ? (
-        confirming ? (
-          <View style={styles.manageRow}>
-            <Text variant="bodySmall" color={colors.textMuted} style={styles.confirmText}>
-              {t.builder.deleteConfirm}
-            </Text>
-            <Button label={t.common.no} variant="secondary" size="sm" onPress={() => setConfirming(false)} />
-            <Button
-              label={t.common.yes}
-              variant="danger"
-              size="sm"
-              onPress={() => {
-                setConfirming(false);
-                onDelete?.(workout);
-              }}
-              testID={`workout-${workout.id}-confirm-delete`}
-            />
-          </View> 
-        ) : (
-          <View style={styles.manageRow}>
-            {onEdit ? (
-              <Button label={t.builder.edit} variant="secondary" size="sm" onPress={() => onEdit(workout)} testID={`workout-${workout.id}-edit`} />
-            ) : null}
-            {onDelete ? (
-              <Button label={t.builder.delete} variant="ghost" size="sm" onPress={() => setConfirming(true)} testID={`workout-${workout.id}-delete`} />
-            ) : null}
-          </View>
-        )
-      ) : null}
     </Card>
   );
 }
@@ -129,6 +143,6 @@ const styles = StyleSheet.create({
   },
   badgeNumber: { fontSize: 30, lineHeight: 32 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.md, marginLeft: -3 },
-  manageRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  manageRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   confirmText: { flex: 1 },
 });

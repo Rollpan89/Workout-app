@@ -226,7 +226,7 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 
 ### `src/ui` – designsystem
 
-- **`primitives/`** – `Text` (typografivarianter), `Button` (snedställd/pill, 5 varianter, 4 storlekar), `ProgressBar` (tjock, snedställd, segment-markeringar, Reanimated), `Chip`, `Card` (med sned accentstripe), `SlantBox` (parallellogram), `Screen`, `SectionTitle`.
+- **`primitives/`** – `Text` (typografivarianter), `Button` (snedställd/pill, 5 varianter, 4 storlekar), `ProgressBar` (tjock, snedställd, segment-markeringar, Reanimated), `Chip`, `Card` (med sned accentstripe; ett pressbart kort blir `<button>` på webben, därför läggs egna knappar i `footer`-propen som renderas *utanför* den pressbara ytan – HTML tillåter inte `<button>` i `<button>`), `SlantBox` (parallellogram), `Screen`, `SectionTitle`.
 - **`components/`** – `WorkoutCard`, `IntensityMeter` (5 segment + stora ± knappar), `InteractionPicker`, `MuscleImpactBars`, `StatTile`.
 
 ### `src/features` – skärmar
@@ -475,9 +475,10 @@ npm test
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik |
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, kopiering med varv, repository-CRUD |
 | `core/__tests__/theme.test.ts` | Paletten är komplett, kontrasthjälparen väljer rätt textfärg |
+| `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
 | `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning). Endast TTS/haptik/lagring/typsnitt mockas. |
 
-94 tester, ~8 s. Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+94 tester, ~8 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 

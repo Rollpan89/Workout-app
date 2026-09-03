@@ -432,10 +432,12 @@ describe('PulseCoach – custom workouts', () => {
     // Built-in cards never get manage buttons
     expect(screen.queryByTestId('workout-full-body-blast-delete')).toBeNull();
 
-    // Delete A: inline confirm, "Nej" backs out, "Ja" removes
+    // Delete A: inline confirm, "Nej" backs out, "Ja" removes.
+    // (The confirm row lives in the card footer, outside the pressable area,
+    // so it is addressed by its own testID rather than via the card.)
     fireEvent.press(screen.getByTestId(`workout-${a.id}-delete`));
     await waitFor(() => expect(screen.getByTestId(`workout-${a.id}-confirm-delete`)).toBeTruthy());
-    fireEvent.press(within(screen.getByTestId(`workout-${a.id}`)).getByText('Nej'));
+    fireEvent.press(screen.getByTestId(`workout-${a.id}-cancel-delete`));
     await waitFor(() => expect(screen.queryByTestId(`workout-${a.id}-confirm-delete`)).toBeNull());
     expect(useCustomWorkoutStore.getState().workouts).toHaveLength(2);
 
