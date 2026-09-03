@@ -1,8 +1,8 @@
 import { resolveLocalized, SPEECH_LANGUAGE_TAG, type Locale } from '../domain/localized';
-import type { VoiceSettings } from '../domain/settings';
+import { effectiveVoiceParams, type VoiceSettings } from '../domain/settings';
 import type { SessionEngine } from '../engine/SessionEngine';
 import type { PlanStep, SessionSnapshot } from '../engine/types';
-import { intensityLabelKey } from '../intensity/intensity';
+import { intensityLabelKey, resolvePrescription } from '../intensity/intensity';
 import type { Unsubscribe } from '../utils/emitter';
 import { getCoachScript, spokenNumber, type CoachScript } from './script';
 import type { SpeechPort, SpeechUtterance } from './SpeechPort';
@@ -66,6 +66,10 @@ export class Coach {
   private pendingTempo?: { word: string; dueAt: number; stepIndex: number };
   /** Greeting waiting to be merged into the first exercise announcement. */
   private pendingGreeting?: string;
+  /** Tips for the upcoming exercise, scheduled at specific rest-seconds-remaining marks. */
+  private restTips: { at: number; text: string }[] = [];
+  /** Exercise id that was already introduced right before the current rest (skip re-announce). */
+  private announcedNextId?: string;
 
   constructor(options: CoachOptions) {
     this.speech = options.speech;
@@ -225,32 +229,59 @@ export class Coach {
       events.on('setCompleted', ({ step }) => {
         this.haptic?.('done');
         this.pendingTempo = undefined;
+        this.announcedNextId = undefined;
         this.say(this.nextPraise(), 'interrupt');
         if (step.isLastSetOfExercise && step.totalSets > 1) {
           this.say(this.script.exerciseDone(this.exerciseName(step)), 'queue');
+        }
+        // Announce what comes next *before* the rest countdown starts, so the
+        // user can already move to the right spot / grab equipment.
+        const next = this.planSteps[step.index + 1];
+        if (this.voice.announceNext && next && next.exercise.id !== step.exercise.id) {
+          const target = resolvePrescription(next.workoutExercise.prescription, engine.snapshot.intensity);
+          const targetText = target.kind === 'reps' ? this.script.repsTarget(target.reps) : this.script.timeTarget(target.seconds);
+          this.say(this.script.comingUp(this.exerciseName(next), targetText), 'queue');
+          this.announcedNextId = next.exercise.id;
         }
       }),
 
       events.on('restStarted', ({ seconds, nextStep, step }) => {
         this.say(this.script.rest(seconds), 'queue');
+        this.restTips = [];
         if (nextStep) {
           if (nextStep.exercise.id !== step.exercise.id) {
-            this.say(this.script.nextUp(this.exerciseName(nextStep)), 'queue');
+            if (this.announcedNextId !== nextStep.exercise.id) {
+              this.say(this.script.nextUp(this.exerciseName(nextStep)), 'queue');
+            }
+            this.scheduleRestTips(nextStep, seconds);
           } else {
             const left = step.totalSets - step.setNumber;
             if (left > 0) this.say(this.script.setsLeft(left), 'queue');
           }
         }
-        if (seconds >= 30) this.maybeRestTalk(engine.snapshot.sessionElapsedSeconds);
-        else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
+        // Motivation only when the rest isn't already filled with tips
+        if (this.restTips.length === 0) {
+          if (seconds >= 30) this.maybeRestTalk(engine.snapshot.sessionElapsedSeconds);
+          else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
+        }
       }),
 
       events.on('restTick', ({ remaining, total }) => {
         if (remaining === 3 && total > 5) {
           this.say(this.script.restEnding, 'interrupt');
-        } else if (remaining <= 2 && remaining >= 1) {
+          return;
+        }
+        if (remaining <= 2 && remaining >= 1) {
           this.say(spokenNumber(this.script, remaining), 'interrupt');
-        } else if (remaining === 10 && total >= 30) {
+          return;
+        }
+        const tip = this.restTips.find((t) => t.at === remaining);
+        if (tip) {
+          this.restTips = this.restTips.filter((t) => t !== tip);
+          this.say(tip.text, 'queue');
+          return;
+        }
+        if (remaining === 10 && total >= 30) {
           this.say(this.script.timeLeft(10), 'drop');
         }
       }),
@@ -299,6 +330,8 @@ export class Coach {
     this.subscriptions = [];
     this.pendingTempo = undefined;
     this.pendingGreeting = undefined;
+    this.restTips = [];
+    this.announcedNextId = undefined;
     this.planSteps = [];
     this.speech.stop();
   }
@@ -332,17 +365,53 @@ export class Coach {
 
   private say(text: string, priority: SpeechUtterance['priority']): void {
     if (!this.voice.enabled) return;
+    const { rate, pitch } = effectiveVoiceParams(this.voice);
     this.speech.speak({
       text,
       language: SPEECH_LANGUAGE_TAG[this.locale],
-      rate: this.voice.rate,
-      pitch: this.voice.pitch,
+      rate,
+      pitch,
       priority,
     });
   }
 
   private exerciseName(step: PlanStep): string {
     return resolveLocalized(step.exercise.name, this.locale);
+  }
+
+  /**
+   * Plan technique tips for the upcoming exercise across the rest.
+   *  - 'one'  → the exercise's key cue (or first coach cue) a few seconds in
+   *  - 'full' → key cue + up to two more coach cues, spread over the rest
+   * Nothing is scheduled for rests shorter than 8 s (no room to listen).
+   */
+  private scheduleRestTips(next: PlanStep, restSeconds: number): void {
+    if (this.voice.restTips === 'off' || restSeconds < 8) return;
+    const name = this.exerciseName(next);
+    const pool: string[] = [];
+    const seen = new Set<string>();
+    const push = (text: string | undefined) => {
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      pool.push(text);
+    };
+    if (next.exercise.cue) push(resolveLocalized(next.exercise.cue, this.locale));
+    for (const cue of next.exercise.instructions?.coachCues ?? []) push(resolveLocalized(cue, this.locale));
+    if (pool.length === 0) return;
+
+    const count = this.voice.restTips === 'full' ? Math.min(3, pool.length) : 1;
+    // First tip after the announcements have had time to play; the rest spread
+    // evenly, always leaving the last 5 s for "Gör dig redo" + countdown.
+    const first = Math.max(5, restSeconds - Math.min(6, Math.floor(restSeconds / 3)));
+    const last = 6;
+    this.restTips = pool.slice(0, count).map((tip, i) => {
+      let at = count === 1 ? first : Math.round(first - ((first - last) * i) / (count - 1));
+      if (at === 10 && restSeconds >= 30) at = 11; // keep the "10 s left" call-out free
+      return { at, text: i === 0 ? this.script.tipFor(name, tip) : this.script.tipMore(tip) };
+    });
+    // De-duplicate marks that collapsed onto the same second on very short rests
+    const marks = new Set<number>();
+    this.restTips = this.restTips.filter((t) => (marks.has(t.at) ? false : (marks.add(t.at), true)));
   }
 
   /** True when every remaining step belongs to the same exercise as `step`. */
