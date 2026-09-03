@@ -1,18 +1,25 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { Workout } from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
 import { accent, colors, spacing } from '@/theme';
-import { Card, Chip, Text } from '@/ui/primitives';
+import { Button, Card, Chip, Text } from '@/ui/primitives';
 
 export interface WorkoutCardProps {
   workout: Workout;
   onPress: (workout: Workout) => void;
+  /** Shown as "Redigera" on custom workouts. */
+  onEdit?: (workout: Workout) => void;
+  /** Shown as "Radera" on custom workouts; confirmed inline before firing. */
+  onDelete?: (workout: Workout) => void;
 }
 
-export function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
+export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardProps) {
   const { t, lz } = useI18n();
   const tone = accent[workout.accent];
+  const [confirming, setConfirming] = useState(false);
+  const manageable = !!workout.custom && (onEdit || onDelete);
 
   return (
     <Card accentColor={tone.main} onPress={() => onPress(workout)} style={styles.card} testID={`workout-${workout.id}`}>
@@ -51,6 +58,36 @@ export function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
         <Chip label={t.difficulty[workout.difficulty]} />
         <Chip label={t.equipment[workout.equipment[0] ?? 'none']} />
       </View>
+
+      {manageable ? (
+        confirming ? (
+          <View style={styles.manageRow}>
+            <Text variant="bodySmall" color={colors.textMuted} style={styles.confirmText}>
+              {t.builder.deleteConfirm}
+            </Text>
+            <Button label={t.common.no} variant="secondary" size="sm" onPress={() => setConfirming(false)} />
+            <Button
+              label={t.common.yes}
+              variant="danger"
+              size="sm"
+              onPress={() => {
+                setConfirming(false);
+                onDelete?.(workout);
+              }}
+              testID={`workout-${workout.id}-confirm-delete`}
+            />
+          </View>
+        ) : (
+          <View style={styles.manageRow}>
+            {onEdit ? (
+              <Button label={t.builder.edit} variant="secondary" size="sm" onPress={() => onEdit(workout)} testID={`workout-${workout.id}-edit`} />
+            ) : null}
+            {onDelete ? (
+              <Button label={t.builder.delete} variant="ghost" size="sm" onPress={() => setConfirming(true)} testID={`workout-${workout.id}-delete`} />
+            ) : null}
+          </View>
+        )
+      ) : null}
     </Card>
   );
 }
@@ -92,4 +129,6 @@ const styles = StyleSheet.create({
   },
   badgeNumber: { fontSize: 30, lineHeight: 32 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.md, marginLeft: -3 },
+  manageRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  confirmText: { flex: 1 },
 });
