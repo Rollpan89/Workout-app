@@ -1,14 +1,24 @@
 import Constants from 'expo-constants';
-import { useMemo } from 'react';
 import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 
-import { ExpoSpeech } from '@/adapters/speech/ExpoSpeech';
-import { SPEECH_LANGUAGE_TAG, type Locale, type WorkoutGoal } from '@/core/domain';
+import { getSpeech } from '@/adapters';
+import {
+  effectiveVoiceParams,
+  REST_TIPS_LEVELS,
+  SPEECH_LANGUAGE_TAG,
+  VOICE_ENERGIES,
+  type Locale,
+  type RestTipsLevel,
+  type VoiceEnergy,
+  type WorkoutGoal,
+} from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { InteractionPicker } from '@/ui/components';
 import { Button, Card, Chip, Screen, SectionTitle, Text } from '@/ui/primitives';
+
+import { VoicePicker } from './VoicePicker';
 
 const GOALS: readonly WorkoutGoal[] = ['strength', 'hypertrophy', 'endurance', 'fatLoss', 'mobility'];
 const RATES = [0.8, 0.9, 1.0, 1.1, 1.25] as const;
@@ -22,16 +32,26 @@ export function SettingsScreen() {
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const setKeepScreenAwake = useSettingsStore((s) => s.setKeepScreenAwake);
 
-  const speech = useMemo(() => new ExpoSpeech(), []);
-
   const testVoice = () => {
-    speech.speak({
+    const { rate, pitch } = effectiveVoiceParams(settings.voice);
+    getSpeech().speak({
       text: t.settings.testVoiceLine,
       language: SPEECH_LANGUAGE_TAG[settings.locale],
-      rate: settings.voice.rate,
-      pitch: settings.voice.pitch,
+      rate,
+      pitch,
       priority: 'interrupt',
     });
+  };
+
+  const energyLabel: Record<VoiceEnergy, string> = {
+    calm: t.settings.energyCalm,
+    energetic: t.settings.energyEnergetic,
+    hype: t.settings.energyHype,
+  };
+  const restTipsLabel: Record<RestTipsLevel, string> = {
+    off: t.settings.restTipsOff,
+    one: t.settings.restTipsOne,
+    full: t.settings.restTipsFull,
   };
 
   return (
@@ -64,6 +84,16 @@ export function SettingsScreen() {
             trackColor={{ true: colors.red, false: colors.surfaceHigh }}
             thumbColor={colors.text}
           />
+        </Row>
+        <Row label={t.settings.energy} hint={t.settings.energyDesc} stacked>
+          <View style={styles.chipRow}>
+            {VOICE_ENERGIES.map((e) => (
+              <Chip key={e} label={energyLabel[e]} selected={settings.voice.energy === e} onPress={() => updateVoice({ energy: e })} />
+            ))}
+          </View>
+        </Row>
+        <Row label={t.settings.voicePick} hint={t.settings.voicePickDesc} stacked>
+          <VoicePicker locale={settings.locale} voice={settings.voice} onPick={(voiceId) => updateVoice({ voiceId })} />
         </Row>
         <Row label={t.settings.voiceRate}>
           <View style={styles.rates}>
@@ -114,6 +144,27 @@ export function SettingsScreen() {
             trackColor={{ true: colors.red, false: colors.surfaceHigh }}
             thumbColor={colors.text}
           />
+        </Row>
+        <Row label={t.settings.announceNext} hint={t.settings.announceNextDesc}>
+          <Switch
+            value={settings.voice.announceNext}
+            onValueChange={(announceNext) => updateVoice({ announceNext })}
+            trackColor={{ true: colors.red, false: colors.surfaceHigh }}
+            thumbColor={colors.text}
+            testID="toggle-announce-next"
+          />
+        </Row>
+        <Row label={t.settings.restTips} hint={t.settings.restTipsDesc} stacked>
+          <View style={styles.chipRow}>
+            {REST_TIPS_LEVELS.map((level) => (
+              <Chip
+                key={level}
+                label={restTipsLabel[level]}
+                selected={settings.voice.restTips === level}
+                onPress={() => updateVoice({ restTips: level })}
+              />
+            ))}
+          </View>
         </Row>
         <Row label={t.settings.haptics}>
           <Switch
@@ -181,9 +232,22 @@ export function SettingsScreen() {
   );
 }
 
-function Row({ label, hint, children, last }: { label: string; hint?: string; children: React.ReactNode; last?: boolean }) {
+function Row({
+  label,
+  hint,
+  children,
+  last,
+  stacked,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+  last?: boolean;
+  /** Control rendered under the label (for wide controls such as chip rows). */
+  stacked?: boolean;
+}) {
   return (
-    <View style={[styles.row, !last && styles.rowBorder]}>
+    <View style={[styles.row, stacked && styles.rowStacked, !last && styles.rowBorder]}>
       <View style={styles.rowText}>
         <Text variant="bodyBold">{label}</Text>
         {hint ? (
@@ -209,6 +273,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     minHeight: 56,
   },
+  rowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: spacing.sm },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   rowText: { flex: 1, gap: 2 },
   rates: { flexDirection: 'row', gap: 4 },

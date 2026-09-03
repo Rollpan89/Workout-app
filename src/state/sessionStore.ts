@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { ExpoSpeech } from '@/adapters/speech/ExpoSpeech';
+import { applyVoiceSettings, getSpeech as getSharedSpeech } from '@/adapters/speech/speechInstance';
 import { haptic } from '@/adapters/haptics/haptics';
 import { Coach } from '@/core/coach/Coach';
 import { SilentSpeech, type SpeechPort } from '@/core/coach/SpeechPort';
@@ -52,7 +52,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let unsubscribeSettings: (() => void) | undefined;
 
 function getSpeech(): SpeechPort {
-  speech ??= new ExpoSpeech();
+  speech ??= getSharedSpeech();
   return speech;
 }
 
@@ -86,6 +86,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       intensity: intensity ?? DEFAULT_INTENSITY,
     });
 
+    applyVoiceSettings(settings.locale, settings.voice);
     coach = new Coach({
       speech: settings.voice.enabled ? getSpeech() : new SilentSpeech(),
       locale: settings.locale,
@@ -98,6 +99,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Keep the coach in sync if the user changes voice/locale mid-session
     unsubscribeSettings = useSettingsStore.subscribe((state) => {
       coach?.updateSettings(state.settings.locale, state.settings.voice, state.settings.profile.displayName);
+      applyVoiceSettings(state.settings.locale, state.settings.voice);
       if (state.settings.voice.enabled) coach?.setSpeech(getSpeech());
       else coach?.setSpeech(new SilentSpeech());
     });

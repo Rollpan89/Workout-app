@@ -11,7 +11,14 @@ jest.mock('expo-speech', () => ({
   pause: jest.fn(() => Promise.resolve()),
   resume: jest.fn(() => Promise.resolve()),
   isSpeakingAsync: jest.fn(() => Promise.resolve(false)),
-  getAvailableVoicesAsync: jest.fn(() => Promise.resolve([])),
+  getAvailableVoicesAsync: jest.fn(() =>
+    Promise.resolve([
+      { identifier: 'com.apple.voice.compact.sv-SE.Alva', name: 'Alva', language: 'sv-SE', quality: 'Default' },
+      { identifier: 'com.apple.voice.premium.sv-SE.Klara', name: 'Klara (Premium)', language: 'sv-SE', quality: 'Enhanced' },
+      { identifier: 'com.apple.voice.enhanced.en-US.Samantha', name: 'Samantha', language: 'en-US', quality: 'Enhanced' },
+    ]),
+  ),
+  VoiceQuality: { Default: 'Default', Enhanced: 'Enhanced' },
   maxSpeechInputLength: 4000,
 }));
 
