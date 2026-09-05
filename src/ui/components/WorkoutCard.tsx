@@ -76,7 +76,7 @@ export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardP
               }}
               testID={`workout-${workout.id}-confirm-delete`}
             />
-          </View>
+          </View> 
         ) : (
           <View style={styles.manageRow}>
             {onEdit ? (
