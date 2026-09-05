@@ -8,8 +8,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppFonts } from '@/hooks/useAppFonts';
 import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { useHistoryStore } from '@/state/historyStore';
+import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors } from '@/theme';
+import { ErrorBoundary } from '@/ui/components/ErrorBoundary';
 
 // Keep the native splash visible until fonts + persisted state are ready.
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -22,14 +24,17 @@ export default function RootLayout() {
   const hydrateHistory = useHistoryStore((s) => s.hydrate);
   const customHydrated = useCustomWorkoutStore((s) => s.hydrated);
   const hydrateCustom = useCustomWorkoutStore((s) => s.hydrate);
+  const loadPendingCheckpoint = useSessionStore((s) => s.loadPendingCheckpoint);
 
   useEffect(() => {
     void hydrateSettings();
     void hydrateHistory();
     void hydrateCustom();
-  }, [hydrateSettings, hydrateHistory, hydrateCustom]);
+    void loadPendingCheckpoint();
+  }, [hydrateSettings, hydrateHistory, hydrateCustom, loadPendingCheckpoint]);
 
-  const ready = (fontsLoaded || !!fontError) && settingsHydrated && historyHydrated && customHydrated;
+  const ready =
+    (fontsLoaded || !!fontError) && settingsHydrated && historyHydrated && customHydrated;
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -42,21 +47,30 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-            animation: 'fade_from_bottom',
-          }}
-        >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="builder/[id]" options={{ animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade' }} />
-          <Stack.Screen name="summary" options={{ gestureEnabled: false, animation: 'fade' }} />
-        </Stack>
+        <ErrorBoundary onReset={() => useSessionStore.getState().reset()}>
+          <AppStack />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function AppStack() {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bg },
+        animation: 'fade_from_bottom',
+      }}
+    >
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="history/[id]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="builder/[id]" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade' }} />
+      <Stack.Screen name="summary" options={{ gestureEnabled: false, animation: 'fade' }} />
+    </Stack>
   );
 }
 

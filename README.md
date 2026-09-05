@@ -41,8 +41,17 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Automatisk beräkning av kalorier (MET-baserad) och muskelpåverkan vid avslut | ✅ |
 | Historik med streak, totaler och muskelbalans | ✅ |
 | Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, tips under vilan), haptik, profil | ✅ |
-| Håller skärmen tänd under pass | ✅ |
-| Data sparas lokalt, med repository-lager förberett för backend | ✅ |
+| Håller skärmen tänd under pass; **sessionsskärmen får roteras** (liggande: display till vänster, kontroller till höger) | ✅ |
+| **Audiosession under passet** (v4): rösten fortsätter med släckt skärm, spelar i ljudlöst läge och *duckar* musik i stället för att stoppa den | ✅ |
+| **Bakgrunds-tålig räkning** (v4): efter ett samtal/appbyte hoppar motorn över tiden du inte kunde höra och coachen säger var ni är – aldrig 15 siffror i en klump | ✅ |
+| **Justerbart räknetempo** (v4): Lugnt / Normalt / Snabbt före start, ± under setet, **minns per övning** | ✅ |
+| **Fortsätt passet?** (v4): pågående pass checkpointas var 5:e sekund – krasch, app-död eller tomt batteri förlorar inte passet | ✅ |
+| **Blind paus** (v4): dubbeltryck var som helst på den stora displayen | ✅ |
+| Historik med streak, totaler, muskelbalans, **detaljvy per pass, radera enskilt pass och "jämfört med förra gången"** (v4) | ✅ |
+| Kalorier visas som **ärligt intervall** (±20 %) och märks "uppskattning" (v4) | ✅ |
+| **Sök** i biblioteket (titel, tagline, övningsnamn) och **varv/cirklar** i byggaren (v4) | ✅ |
+| **Introduktion** vid första start (3 steg), **ErrorBoundary** med lugn felsida, **opt-in felrapporter** (av som standard) (v4) | ✅ |
+| Data sparas lokalt (max 365 loggar), med repository-lager förberett för backend | ✅ |
 
 ---
 
@@ -168,6 +177,12 @@ Motorn hanterar även *glesa ticks* (appen låg i bakgrunden): missade reps "hin
 
 **`types.ts`** – `PlanStep`, `SessionSnapshot` (allt UI:t behöver rendera), `SessionEvents` (den typade händelsekartan), `SessionStats`.
 
+**Nytt i v4 – motorns tålighet**
+
+- `maxCatchUpReps` (standard 3): en enskild `tick()` får räkna ikapp högst tre reps. Större luckor (JS-timers frusna i bakgrunden, samtal) hoppas över genom att fasklockan flyttas fram och `gapSkipped` emitteras; coachen svarar med `resumeAt`: *"Vi fortsätter. Set 2 av 3, rep 5 av 12."* Samma replik används vid manuell paus → fortsätt.
+- `setTempoFactor(f)` / `snapshot.tempoFactor`: multiplikator på `exercise.secondsPerRep` (0,7–1,6). Byte mitt i ett set bevarar hur stor del av det pågående rep-fönstret som gått, så räkningen varken hackar eller hoppar. Förval: Lugnt 1,3× / Normalt 1,0× / Snabbt 0,8×; ±-knapparna stegar 0,1 och värdet sparas i `settings.tempoOverrides[exerciseId]`.
+- `checkpoint()` / `restore(cp)`: serialiserar stegindex, intensitet, tempo, interaktionsnivå, starttid, förfluten tid och statistik. `restore` börjar om det avbrutna steget (att återuppta mitt i ett rep är inte meningsfullt) och bokför krasch→omstart-tiden som paus så loggens längd förblir ärlig.
+
 ### `src/core/coach` – rösten
 
 | Fil | Roll |
@@ -210,6 +225,8 @@ Rena funktioner som körs när `finished` emitteras. Se [Kalorier & muskelpåver
 - **`speech/ExpoSpeech.ts`** – `SpeechPort` ovanpå `expo-speech`. Implementerar prioritetskön och har en vakthund som drar kön vidare om plattformen glömmer `onDone`. **Röstval:** vid start listas enhetens röster (`getAvailableVoicesAsync`) och rankas med `rankVoice()` – premium/neural (identifierare med `premium`, `neural`, `natural`, `siri`, `wavenet` …) > `Enhanced` > standard > legacy (`eloquence`, `espeak` …). Bästa röst per språk (sv-SE, en-US) väljs automatiskt; användaren kan låsa en specifik via `setPreferredVoice()`. `listVoices()`/`resolveVoice()` driver röstväljaren. Obs: expo-speech rapporterar iOS *premium*-röster som `quality: Default`, därför identifieras de på namnet.
 - **`speech/speechInstance.ts`** – en delad `ExpoSpeech`-instans för hela appen (`getSpeech()`), så att rösten du väljer i Inställningar är den som talar i passet. `applyVoiceSettings()` anropas när inställningarna ändras.
 - **`haptics/haptics.ts`** – `haptic('rep' | 'go' | 'done' | 'warn' | 'tap')`. No-op på web.
+- **`audio/audioSession.ts`** (v4) – `AudioSessionPort` ovanpå `expo-audio`. `begin()` vid passstart: `setAudioModeAsync({ playsInSilentMode, shouldPlayInBackground, interruptionMode: 'duckOthers' })` + en **tyst 2-sekunders WAV i loop** (`assets/audio/silence.wav`, 32 kB) som håller iOS-audiosessionen vid liv med släckt skärm. `end()` ~4 s efter sista repliken så musiken kommer tillbaka. `NullAudioSession` för tester/web. Varför inte bara `UIBackgroundModes: audio`? Rättigheten tillåter bakgrundsljud men skapar ingen session – expo-speech river sin efter varje replik.
+- **`crash/crashReporter.ts`** (v4) – `CrashReporter`-port. Standard: `ConsoleCrashReporter` (loggar bara). Sentry pluggas in med `setCrashReporter(new SentryCrashReporter())` – ingen native-dependency förrän man faktiskt vill ha den. Rapportering är **opt-in** (`settings.crashReports`, av som standard).
 
 ### `src/data` – repository-lagret
 
@@ -222,24 +239,26 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 | `settingsStore` | `AppSettings`, hydrering från repo, persisterar vid varje ändring |
 | `historyStore` | `SessionLog[]`, optimistisk uppdatering |
 | `customWorkoutStore` | Användarens utkast + deras kompilerade `Workout`-versioner. `save`/`remove`/`newDraft`/`duplicate`. Exporterar `findWorkout(id)`/`useWorkout(id)` som slår upp **både** inbyggda och egna pass – används av detalj, summering och historik. |
-| `sessionStore` | **Äger körtidsobjekten** (`SessionEngine`, `Coach`, `setInterval`) utanför React-state. Exponerar `snapshot` + actions. När motorn blir `finished` byggs `SessionLog` och sparas via `historyStore`. |
+| `sessionStore` | **Äger körtidsobjekten** (`SessionEngine`, `Coach`, `setInterval`, audiosession, `AppState`-lyssnare) utanför React-state. Exponerar `snapshot` + actions (`adjustTempo` lär in tempot per övning). När motorn blir `finished` byggs `SessionLog` och sparas via `historyStore`. **Checkpoint** (v4): skrivs vid varje steg-/fasbyte, annars max var 5:e s; rensas vid avslut, medvetet avbrott och efter 6 h. `loadPendingCheckpoint()` körs i rot-layouten → `pendingCheckpoint` → "Fortsätt passet?"-rutan i biblioteket → `start({ workout, resumeFrom })` → `engine.restore()`. |
 
 ### `src/ui` – designsystem
 
 - **`primitives/`** – `Text` (typografivarianter), `Button` (snedställd/pill, 5 varianter, 4 storlekar), `ProgressBar` (tjock, snedställd, segment-markeringar, Reanimated), `Chip`, `Card` (med sned accentstripe; ett pressbart kort blir `<button>` på webben, därför läggs egna knappar i `footer`-propen som renderas *utanför* den pressbara ytan – HTML tillåter inte `<button>` i `<button>`), `SlantBox` (parallellogram), `Screen`, `SectionTitle`.
-- **`components/`** – `WorkoutCard`, `IntensityMeter` (5 segment + stora ± knappar), `InteractionPicker`, `MuscleImpactBars`, `StatTile`.
+- **`components/`** – `WorkoutCard`, `IntensityMeter` (5 segment + stora ± knappar), `InteractionPicker`, `MuscleImpactBars`, `StatTile`, `ComparisonRow` (deltas mot förra passet), `ErrorBoundary` (klasskomponent runt hela stacken; felsida "Oj. … Ett pågående pass har sparats" + Starta om).
+- **Kontrast** (v4): `contrastRatio()`/`relativeLuminance()` i `theme/tokens.ts` är riktiga WCAG-formler. `textDim` höjdes från `#6E6E78` (2,9:1) till `#92929E` (≥ 4,5:1 på alla ytor). `onAccent()` väljer mörk/vit text på uppmätt kontrast – orange och vilo-blått får därför mörk text. `theme.test.ts` låser golven så paletten inte kan regrediera.
 
 ### `src/features` – skärmar
 
 | Skärm | Route | Roll |
 |---|---|---|
-| `LibraryScreen` | `/` | Bibliotek med målfilter, streak/summering, sektionen **Mina pass**, "Skapa eget pass" |
-| `WorkoutDetailScreen` | `/workout/[id]` | Dagsform → startintensitet, **live-skalad översikt** (tryck på en övning → `ExerciseSheet`), interaktionsnivå, **Starta**; "Kopiera & anpassa" på alla pass, "Redigera"/"Radera" på egna |
-| `WorkoutBuilderScreen` + `ExercisePicker` + `DraftExerciseRow` | `/builder/[id]` | Byggaren: namn, färg, mål, nivå, övningslista med steppers (set / reps eller sekunder / vila), reps↔tid, ordning, info-ark, vila mellan övningar, validering. `id = new` (tomt), `new?from=<id>` (kopia) eller `<eget id>` (redigera) |
-| `SessionScreen` + `PhaseDisplay` | `/session` | Det aktiva passet: jättesiffra, fas, progress, intensitet, kontroller |
-| `SummaryScreen` | `/summary` | Kalorier, tid, reps, set, snittintensitet, muskelpåverkan |
-| `HistoryScreen` | `/history` | Totaler, streak, muskelbalans, lista |
-| `SettingsScreen` | `/settings` | Språk, interaktion, röst, profil |
+| `LibraryScreen` + `ResumeBanner` + `OnboardingOverlay` | `/` | Bibliotek med **sök** + målfilter, streak/summering, sektionen **Mina pass**, "Skapa eget pass". Visar **"Avbrutet pass – Fortsätt?"** när en checkpoint finns och **intron** vid första start |
+| `WorkoutDetailScreen` | `/workout/[id]` | Dagsform → startintensitet, **live-skalad översikt** (tryck på en övning → `ExerciseSheet`), **räknetempo** (Lugnt/Normalt/Snabbt), interaktionsnivå, **Starta**; "Kopiera & anpassa" på alla pass, "Redigera"/"Radera" på egna |
+| `WorkoutBuilderScreen` + `ExercisePicker` + `DraftExerciseRow` | `/builder/[id]` | Byggaren: namn, färg, mål, nivå, övningslista med steppers (set / reps eller sekunder / vila), reps↔tid, ordning, info-ark, **varv** (1–5, cirkel), vila mellan övningar, validering. `id = new` (tomt), `new?from=<id>` (kopia) eller `<eget id>` (redigera) |
+| `SessionScreen` + `PhaseDisplay` | `/session` | Det aktiva passet: jättesiffra, fas, progress, intensitet, **tempo ±**, kontroller; **dubbeltryck på displayen = paus**; roterbar |
+| `SummaryScreen` | `/summary` | Kalorier (intervall), tid, reps, set, snittintensitet, **jämfört med förra gången**, muskelpåverkan |
+| `HistoryScreen` | `/history` | Totaler, streak, muskelbalans, lista (`FlatList`) med ▲/▼ mot förra passet |
+| `SessionDetailScreen` | `/history/[id]` | Ett loggat pass: alla mått, jämförelse, muskelpåverkan, **Kör igen**, **Radera passet** |
+| `SettingsScreen` | `/settings` | Språk, interaktion, röst, profil, **felrapporter (opt-in)** |
 
 ### `app/` – routing
 
@@ -396,13 +415,14 @@ Nivån väljs som standard i Inställningar och kan överridas per pass på deta
 
 ## Datalagring & backend-förberedelse
 
-Nycklar under `pulsecoach:v1:`: `settings`, `sessions`, `customWorkouts`. Egna pass lagras som *utkast* (`CustomWorkoutDraft`) – inte som kompilerade `Workout` – så att redigeringsmodellen kan utvecklas utan att gamla data blir oläsbara. `CustomWorkoutRepository` (`listDrafts/getDraft/saveDraft/deleteDraft`) är det fjärde gränssnittet i `Repositories`.
+Nycklar under `pulsecoach:v1:`: `settings`, `sessions` (max **365** loggar, äldst kastas först – håller JSON-blobben och varje hydrering begränsad), `sessionCheckpoint` (pågående pass) och `customWorkouts`. Egna pass lagras som *utkast* (`CustomWorkoutDraft`) – inte som kompilerade `Workout` – så att redigeringsmodellen kan utvecklas utan att gamla data blir oläsbara. `CustomWorkoutRepository` (`listDrafts/getDraft/saveDraft/deleteDraft`) är det fjärde gränssnittet i `Repositories`.
 
 Appen använder **inget API idag** – all data ligger lokalt i AsyncStorage under namnrymden `pulsecoach:v1:`. Men UI och stores pratar aldrig direkt med lagringen; de går via gränssnitt i `src/data/repositories/types.ts`:
 
 ```ts
 interface WorkoutRepository  { listWorkouts(); getWorkout(id); getExercise(id); exerciseLookup(); }
-interface SessionRepository  { listSessions(); saveSession(log); deleteSession(id); clear(); }
+interface SessionRepository  { listSessions(); saveSession(log); deleteSession(id); clear();
+                               loadCheckpoint(); saveCheckpoint(cp); clearCheckpoint(); }
 interface SettingsRepository { load(); save(settings); }
 ```
 
@@ -469,16 +489,53 @@ npm test
 |---|---|
 | `core/__tests__/planner.test.ts` | Utplattning, varv, vila-regler, felhantering |
 | `core/__tests__/intensity.test.ts` | Skala, klämning, readiness-mappning |
-| `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, paus, intensitet mitt i set, alla tre interaktionsnivåer |
+| `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, **begränsad ikapp-räkning efter bakgrundsluckor**, paus, intensitet mitt i set, **tempo mitt i set (bevarat rep-fönster, klämning)**, **checkpoint/restore**, alla tre interaktionsnivåer |
 | `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål) och **vilo-tips** (`off`/`one`/`full`, inga tips mellan set av samma övning) |
 | `core/__tests__/voice.test.ts` | Röstrankningen (premium > enhanced > standard > legacy) och energi-förvalens rate/pitch |
-| `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik |
-| `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, kopiering med varv, repository-CRUD |
-| `core/__tests__/theme.test.ts` | Paletten är komplett, kontrasthjälparen väljer rätt textfärg |
+| `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik, **jämförelse med förra passet**, **kaloriintervall** |
+| `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, **varv/cirklar** (kompilering, klämning, kopiering behåller varv), repository-CRUD, **historik-tak (365) + checkpoint-rundtur** |
+| `core/__tests__/theme.test.ts` | Paletten är komplett, `onAccent` väljer rätt textfärg, **WCAG-golv**: text ≥ 7:1, muted/dim ≥ 4,5:1 på alla ytor, text-på-accent ≥ 3:1 |
+| `ui/__tests__/ErrorBoundary.test.tsx` | Fångar renderfel, visar svensk felsida, lämnar felet till `CrashReporter`, återhämtar sig på "Starta om" |
 | `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning). Endast TTS/haptik/lagring/typsnitt mockas. |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
 
-94 tester, ~8 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+119 tester, ~9 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+
+---
+
+## Verifiering på riktig enhet – protokoll
+
+Det som gör appen värd något – att rösten fortsätter räkna med skärmen släckt – går **inte** att testa i Jest, i webbläsaren eller i simulatorn. Protokollet nedan är det minsta som ska köras på fysisk hårdvara före varje release. Bocka av i PR-beskrivningen.
+
+**Förutsättningar**
+
+- **Dev-build**, inte Expo Go: `npx expo run:ios` / `npx expo run:android` (eller EAS `development`-profil). Expo Go saknar `UIBackgroundModes: audio`-rättigheten och `expo-audio`-konfigurationen, så bakgrundsljud *kan* fungera ojämnt där utan att det säger något om produktionsbygget.
+- En fysisk iPhone (iOS 17+) och en Android-telefon (Android 12+, gärna en tillverkare med aggressiv batterihantering – Samsung/Xiaomi).
+- Ett pass med minst tre övningar och rep-baserade set, t.ex. *Full Body Blast*, hands-free.
+
+**Testmatris**
+
+| # | Scenario | Gör så här | Förväntat |
+|---|---|---|---|
+| A1 | Låst skärm, iOS | Starta passet, lås telefonen efter första övningen, lägg den i fickan i 5 min | Räkning, vila, "Nästa: …" och nedräkning hörs hela tiden. Ingen tystnad efter 30 s (typiskt symptom på att audiosessionen dött). |
+| A2 | Låst skärm, Android | Som A1. Upprepa med batterisparläge **på**. | Som A1. Med batterisparläge kan enskilda repliker komma något sent; räkningen får inte hoppa >1 rep. |
+| B1 | Musik i bakgrunden | Starta Spotify/Apple Music, starta sedan passet | Musiken **duckas** (sänks) när coachen pratar och kommer tillbaka mellan replikerna. Musiken stoppas *inte*. När passet avslutas återgår volymen helt inom ~5 s. |
+| B2 | Ljudlös-knapp / DND | iPhone med ljudlös-läge på; Android med "Stör ej" | Coachen hörs ändå (`playsInSilentMode`). Haptik fortsätter. |
+| C1 | Inkommande samtal | Ring telefonen mitt i ett set, svara, lägg på efter 30 s | Under samtalet är coachen tyst. Efteråt hörs "Vi fortsätter. Set 2 av 3, rep N av M." och räkningen fortsätter – inte 15 siffror i en klump. |
+| C2 | Missat samtal / notis | Låt det ringa utan att svara | Kort avbrott, sedan fortsätter räkningen med rätt position. |
+| D1 | Hörlurar | Bluetooth-hörlurar in före start; dra ut/koppla ifrån mitt i passet | Ljudet går till hörlurarna. När de kopplas ifrån går ljudet **inte** ut i högtalaren av misstag (iOS pausar sessionen – appen ska läsa upp positionen när du trycker Fortsätt). |
+| E1 | App-död | Tvångsstäng appen (svep bort) under övning 3, öppna igen | Biblioteket visar "Avbrutet pass – du var på steg 3 av N". *Fortsätt passet* startar på steg 3 med "Välkommen tillbaka…". *Kasta* tar bort rutan och checkpointen. |
+| E2 | Omstart av telefonen | Som E1 men starta om telefonen | Samma som E1 (checkpointen ligger i AsyncStorage). |
+| F1 | Lång bakgrund | Lägg appen i bakgrunden (inte låst skärm – byt app) i 10 min | Vid återgång: ingen skur av repliker; coachen säger var ni är. Passtiden i summeringen exkluderar inte bakgrundstiden (den räknas som träning om ljudet fortsatte, som paus om OS:et frös JS). |
+| G1 | Tempo | Under ett rep-set tryck *Långsammare* två gånger | "Lugnare tempo." sägs direkt; nästa rep kommer märkbart senare; värdet visas som t.ex. `Tempo 1.2×`. Starta samma pass igen: övningen startar på 1.2×. |
+| H1 | Batteri | 30 min pass med skärm på (`Håll skärmen tänd`) | < 10 % batteri på moderna telefoner. Om mer: kontrollera att `TICK_MS` inte sänkts och att inga animationer körs i bakgrunden. |
+
+**Så här felsöker du om A1/A2 fallerar**
+
+1. `npx expo config --type introspect | grep -A3 UIBackgroundModes` → ska innehålla `audio`.
+2. Kontrollera att `getAudioSession().begin()` körs (lägg en `console.log` i `ExpoAudioSession.begin`) och att `setAudioModeAsync` inte kastar.
+3. iOS: i Xcode → *Signing & Capabilities* måste *Background Modes → Audio* vara ikryssat i det genererade projektet (prebuild gör det via `app.json`).
+4. Android 13+: `expo-audio` behöver notis-behörighet för långvarig bakgrundsuppspelning om passet är längre än ~3 min; följ `expo-audio`-dokumentationen för `setActiveForLockScreen` om det behövs (medvetet inte påslaget – kräver ett notisdesign-beslut).
 
 ---
 
@@ -512,7 +569,7 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 
 ## Kända begränsningar & nästa steg
 
-- **Bakgrundsljud på iOS** kräver `UIBackgroundModes: audio` (finns i `app.json`) *och* en aktiv audiosession; det behöver verifieras i en dev-build eftersom Expo Go begränsar bakgrundskörning.
+- **Bakgrundsljud** – appen håller nu en audiosession (`expo-audio`, tyst loop + `shouldPlayInBackground`) så länge passet pågår. Det måste ändå verifieras på riktig hårdvara enligt [protokollet ovan](#verifiering-på-riktig-enhet--protokoll); Expo Go är inte representativt. Android kan stoppa bakgrundsljud efter ~3 min utan låsskärmskontroller (`setActiveForLockScreen`) – inte påslaget ännu.
 - **Röstkvalitet** beror på enhetens TTS. Appen väljer nu den bästa installerade rösten och Inställningar visar en hänvisning om bara standardröster finns (iOS: *Hjälpmedel → Talat innehåll → Röster*, ladda ner t.ex. *Klara (Premium)*; Android: *Text-till-tal → Google-motor → Installera röstdata*). Vill man längre än så finns tre vägar, alla bakom det befintliga `SpeechPort`-gränssnittet utan att röra `Coach`:
   1. **Moln-TTS** (ElevenLabs, Azure Neural, Google WaveNet) – klart mest levande, kräver API-nyckel, nätverk under passet och förcachning av de ~200 fasta replikerna (siffror, cues) för att räkningen inte ska släpa. En `CloudSpeech implements SpeechPort` med lokal cache (`expo-file-system` + `expo-av`) är den naturliga formen.
   2. **Förinspelad röstpack** – en riktig coach spelar in skriptet i `script.ts`; dynamiska delar (övningsnamn, siffror) sätts ihop av klipp. Bäst kvalitet offline, men allt nytt innehåll kräver ny inspelning.
@@ -520,6 +577,8 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 - **Kalorier** är uppskattningar (MET-modell); ingen pulsdata.
 - **Egna pass är enkla:** en platt lista (inga block/varv) – medvetet, för att byggaren ska vara snabb att använda. Modellen kompileras till samma `Workout`-form som de färdiga programmen, så block/varv kan läggas till i utkastet senare utan att röra motorn.
 - **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
+- **Blind paus via volymknapp** kräver en native-modul utanför Expo SDK (t.ex. `react-native-volume-manager`) – dubbeltryck är implementerat; skak-paus valdes bort eftersom burpees och jumping jacks skulle utlösa den.
+- **Android bakgrundsljud > 3 min** kan kräva `setActiveForLockScreen` (låsskärmskontroller + notis); se protokollet ovan.
 - **Kandidater för nästa iteration:** egna övningar, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret (utkasten är redan JSON), widgets/Live Activities för vilotimern.
 
 ---
