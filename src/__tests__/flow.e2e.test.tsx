@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
 import { getWorkout } from '@/content';
+import type { Workout } from '@/core/domain';
 import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { useHistoryStore } from '@/state/historyStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -203,6 +204,44 @@ describe('PulseCoach – core flow', () => {
     expect(settings.interactionLevel).toBe('assisted');
   });
 
+  it('exposes the new voice-guide settings: announce-next, rest tips, energy and voice picker', async () => {
+    renderRouter(routes, { initialUrl: '/settings' });
+    await waitFor(() => expect(screen.getByTestId('toggle-announce-next')).toBeTruthy());
+
+    // Defaults
+    expect(useSettingsStore.getState().settings.voice.announceNext).toBe(true);
+    expect(useSettingsStore.getState().settings.voice.restTips).toBe('one');
+    expect(useSettingsStore.getState().settings.voice.energy).toBe('energetic');
+
+    fireEvent(screen.getByTestId('toggle-announce-next'), 'valueChange', false);
+    fireEvent.press(screen.getByText('Alla nyckelpunkter'));
+    fireEvent.press(screen.getByText('Full gas'));
+    await waitFor(() => expect(useSettingsStore.getState().settings.voice.restTips).toBe('full'));
+    expect(useSettingsStore.getState().settings.voice.announceNext).toBe(false);
+    expect(useSettingsStore.getState().settings.voice.energy).toBe('hype');
+
+    // Voice picker lists the device voices for Swedish, best first, and lets the user pin one
+    await waitFor(() => expect(screen.getByTestId('voice-picker')).toBeTruthy());
+    // "Automatiskt" resolves to the premium voice (ranked above the compact one) and shows its name
+    expect(within(screen.getByTestId('voice-auto')).getByText('Klara (Premium)')).toBeTruthy();
+    expect(screen.getAllByText('Klara (Premium)')).toHaveLength(2);
+    expect(screen.getByText('Alva')).toBeTruthy();
+    expect(screen.queryByText('Samantha')).toBeNull(); // English voice hidden while locale is sv
+    fireEvent.press(screen.getByTestId('voice-com.apple.voice.premium.sv-SE.Klara'));
+    await waitFor(() =>
+      expect(useSettingsStore.getState().settings.voice.voiceId).toBe('com.apple.voice.premium.sv-SE.Klara'),
+    );
+
+    // Preview uses the energy preset (rate/pitch above 1) and the pinned voice
+    (Speech.speak as jest.Mock).mockClear();
+    fireEvent.press(screen.getByText('Testa rösten'));
+    const [text, options] = (Speech.speak as jest.Mock).mock.calls[0] as [string, Record<string, unknown>];
+    expect(text).toContain('Jag är din coach');
+    expect(options.voice).toBe('com.apple.voice.premium.sv-SE.Klara');
+    expect(options.rate as number).toBeGreaterThan(1.1);
+    expect(options.pitch as number).toBeGreaterThan(1.1);
+  });
+
   it('runs an assisted session in English: waits for a tap before every set', async () => {
     // Render first: renderRouter (re)installs fake timers and the root layout
     // hydrates settings from storage, so we must apply overrides afterwards.
@@ -365,6 +404,54 @@ describe('PulseCoach – custom workouts', () => {
     fireEvent.press(screen.getByTestId('edit-workout'));
     await waitFor(() => expect(screen.getByTestId('builder-name')).toBeTruthy());
     expect(screen.getByTestId('builder-name').props.value).toBe('Min core');
+    expect(screen.getByText('Redigera pass')).toBeTruthy();
+  });
+
+  it('edits and deletes custom workouts straight from the library cards', async () => {
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('create-workout')).toBeTruthy());
+
+    // Seed two custom workouts through the store (same path the builder uses)
+    const { newDraft, save } = useCustomWorkoutStore.getState();
+    let a!: Workout;
+    let b!: Workout;
+    await act(async () => {
+      a = await save({
+        ...newDraft(),
+        name: 'Pass A',
+        exercises: [{ exerciseId: 'squat', sets: 2, prescription: { kind: 'reps', reps: 10 }, restSeconds: 30 }],
+      });
+      b = await save({
+        ...newDraft(),
+        name: 'Pass B',
+        exercises: [{ exerciseId: 'plank', sets: 2, prescription: { kind: 'time', seconds: 30 }, restSeconds: 30 }],
+      });
+    });
+
+    await waitFor(() => expect(screen.getByTestId(`workout-${a.id}-delete`)).toBeTruthy());
+    // Built-in cards never get manage buttons
+    expect(screen.queryByTestId('workout-full-body-blast-delete')).toBeNull();
+
+    // Delete A: inline confirm, "Nej" backs out, "Ja" removes.
+    // (The confirm row lives in the card footer, outside the pressable area,
+    // so it is addressed by its own testID rather than via the card.)
+    fireEvent.press(screen.getByTestId(`workout-${a.id}-delete`));
+    await waitFor(() => expect(screen.getByTestId(`workout-${a.id}-confirm-delete`)).toBeTruthy());
+    fireEvent.press(screen.getByTestId(`workout-${a.id}-cancel-delete`));
+    await waitFor(() => expect(screen.queryByTestId(`workout-${a.id}-confirm-delete`)).toBeNull());
+    expect(useCustomWorkoutStore.getState().workouts).toHaveLength(2);
+
+    fireEvent.press(screen.getByTestId(`workout-${a.id}-delete`));
+    await waitFor(() => expect(screen.getByTestId(`workout-${a.id}-confirm-delete`)).toBeTruthy());
+    fireEvent.press(screen.getByTestId(`workout-${a.id}-confirm-delete`));
+    await waitFor(() => expect(screen.queryByTestId(`workout-${a.id}`)).toBeNull());
+    expect(useCustomWorkoutStore.getState().workouts.map((w) => w.id)).toEqual([b.id]);
+    expect(JSON.parse((await AsyncStorage.getItem('pulsecoach:v1:customWorkouts')) ?? '[]')).toHaveLength(1);
+
+    // Edit B from the card → builder opens on that draft
+    fireEvent.press(screen.getByTestId(`workout-${b.id}-edit`));
+    await waitFor(() => expect(screen.getByTestId('builder-name')).toBeTruthy());
+    expect(screen.getByTestId('builder-name').props.value).toBe('Pass B');
     expect(screen.getByText('Redigera pass')).toBeTruthy();
   });
 });

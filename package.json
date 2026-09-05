@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "test:web": "jest -c jest.web.config.js --forceExit",
     "test:watch": "jest --watch",
     "lint": "expo lint"
   },
@@ -45,6 +46,7 @@
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "^19.2.7",
     "babel-preset-expo": "~57.0.10",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",

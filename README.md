@@ -29,16 +29,18 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Flöde | Status |
 |---|---|
 | Välj pass ur ett bibliotek av modulära program (7 färdiga, varje med egen färg) | ✅ |
-| **Skapa egna pass** i en enkel byggare, eller **kopiera & anpassa** ett färdigt program – redigera, radera, kör | ✅ |
+| **Skapa egna pass** i en enkel byggare, eller **kopiera & anpassa** ett färdigt program – redigera och radera direkt från korten i biblioteket, från detaljvyn eller inne i byggaren | ✅ |
 | Röstcoach räknar reps och vila i stadig takt, på svenska eller engelska | ✅ |
 | Coachen är **involverad**: teknik-cues mellan reps, tempo-ord på långsamma lyft, pepp mot slutet av setet (med ditt namn), varierat beröm, "X set kvar", vilo-prat | ✅ |
+| Coachen **annonserar nästa övning (med mål) innan vilan startar** och ger **teknik-tips inför nästa övning under vilan** – ett tips eller alla nyckelpunkter, valbart | ✅ |
+| **Levande röst**: energi-förval (Lugn / Energisk / Full gas), automatiskt val av bästa röst på enheten (premium > förbättrad > standard), röstväljare med provlyssning | ✅ |
 | Tre interaktionsnivåer: **hands-free**, **assisterad**, **manuell** | ✅ |
 | Justera intensitet upp/ner **under** passet – reps, tid och vila skalas direkt, coachen säger vad det innebär ("13 repetitioner nu") | ✅ |
 | Dagsform-check innan start som föreslår startintensitet; **översikten räknar om reps/tid/vila live** | ✅ |
 | Tryck på en övning i översikten → **steg-för-steg-instruktioner**, vanliga fel, coachens cues, tempo, muskler | ✅ |
 | Automatisk beräkning av kalorier (MET-baserad) och muskelpåverkan vid avslut | ✅ |
 | Historik med streak, totaler och muskelbalans | ✅ |
-| Inställningar: språk, röst (tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning), haptik, profil | ✅ |
+| Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, tips under vilan), haptik, profil | ✅ |
 | Håller skärmen tänd under pass | ✅ |
 | Data sparas lokalt, med repository-lager förberett för backend | ✅ |
 
@@ -124,7 +126,7 @@ Utöver grundtyperna finns:
 | `exercise.ts` | `Exercise` med `muscles` (last per muskelgrupp 0–1), `met` (metabol ekvivalent), `secondsPerRep` (räknetakt) |
 | `workout.ts` | `Workout` → `WorkoutBlock[]` → `WorkoutExercise[]` med `SetPrescription` (`reps` eller `time`) |
 | `session.ts` | `SessionLog` – det som persisteras när ett pass är klart. `ReadinessLevel` för dagsform |
-| `settings.ts` | `AppSettings`, `InteractionLevel`, `VoiceSettings`, `UserProfile`, `DEFAULT_SETTINGS` |
+| `settings.ts` | `AppSettings`, `InteractionLevel`, `VoiceSettings` (inkl. `announceNext`, `restTips`, `energy`, `voiceId`), `VOICE_ENERGY_PRESETS` + `effectiveVoiceParams()`, `UserProfile`, `DEFAULT_SETTINGS`. Sparade inställningar från äldre versioner djup-mergas över defaults, så nya fält får vettiga värden. |
 
 ### `src/core/engine` – motorn
 
@@ -185,10 +187,15 @@ Prioritetsmodellen är nyckeln till att räkningen känns stadig: "sju" får ald
  halvvägs ─► "Halvvägs!" + kort beröm ("Snygg form.")
  6  7  8 ──► pepp i andra halvan, ibland med namn ("Kom igen Anna!")
 "Två kvar!"  "Sista!"
- beröm (varieras) ─► "Knäböj klart." / "Ett set kvar." / "Nästa övning: …" ─► vilo-prat
+ beröm (varieras) ─► "Knäböj klart." ─► "Nästa: Planka, 30 sekunder." ─► "Vila 20 sekunder."
+ under vilan ─► "Tips inför planka: Spänn magen." (─► "Och: Rak linje." …) ─► "Gör dig redo." två, ett
 ```
 
-Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues och tempo-räkning kan stängas av var för sig i Inställningar.
+**Övergångar mellan övningar.** Nästa övning sägs *före* viloraden (inställning `announceNext`), så att du hinner byta plats eller hämta redskap medan klockan tickar. Målet skalas med aktuell intensitet ("Nästa: Knäböj, 15 repetitioner."). Under vilan schemalägger coachen teknik-tips för den *kommande* övningen (inställning `restTips`: `off` / `one` / `full`) hämtade ur `exercise.cue` + `instructions.coachCues`. Ett tips läggs en bit in i vilan; med `full` sprids upp till tre tips jämnt och de sista 5 sekunderna hålls fria för "Gör dig redo" + nedräkning. Vilor kortare än 8 s och vilor mellan set av *samma* övning får inga tips (där sägs "X set kvar" som förut). Tipsen ligger på **motorns klocka** (`restTick`), så de pausar med passet.
+
+Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues, tempo-räkning, annonsering av nästa övning och vilo-tips kan stängas av var för sig i Inställningar.
+
+**Röstens energi.** `VoiceSettings.energy` (`calm` / `energetic` / `hype`) är ett förval som multipliceras med användarens tempo: `effectiveVoiceParams()` i `domain/settings.ts` ger rate/pitch som skickas med varje utterance (Energisk = 1.10× / 1.08, Full gas = 1.20× / 1.15). Standard är *Energisk*.
 
 ### `src/core/intensity` – intensitetsskalan
 
@@ -200,7 +207,8 @@ Rena funktioner som körs när `finished` emitteras. Se [Kalorier & muskelpåver
 
 ### `src/adapters` – plattformsbryggor
 
-- **`speech/ExpoSpeech.ts`** – `SpeechPort` ovanpå `expo-speech`. Implementerar prioritetskön, väljer "enhanced"-röst om enheten har en, och har en vakthund som drar kön vidare om plattformen glömmer `onDone`.
+- **`speech/ExpoSpeech.ts`** – `SpeechPort` ovanpå `expo-speech`. Implementerar prioritetskön och har en vakthund som drar kön vidare om plattformen glömmer `onDone`. **Röstval:** vid start listas enhetens röster (`getAvailableVoicesAsync`) och rankas med `rankVoice()` – premium/neural (identifierare med `premium`, `neural`, `natural`, `siri`, `wavenet` …) > `Enhanced` > standard > legacy (`eloquence`, `espeak` …). Bästa röst per språk (sv-SE, en-US) väljs automatiskt; användaren kan låsa en specifik via `setPreferredVoice()`. `listVoices()`/`resolveVoice()` driver röstväljaren. Obs: expo-speech rapporterar iOS *premium*-röster som `quality: Default`, därför identifieras de på namnet.
+- **`speech/speechInstance.ts`** – en delad `ExpoSpeech`-instans för hela appen (`getSpeech()`), så att rösten du väljer i Inställningar är den som talar i passet. `applyVoiceSettings()` anropas när inställningarna ändras.
 - **`haptics/haptics.ts`** – `haptic('rep' | 'go' | 'done' | 'warn' | 'tap')`. No-op på web.
 
 ### `src/data` – repository-lagret
@@ -218,7 +226,7 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 
 ### `src/ui` – designsystem
 
-- **`primitives/`** – `Text` (typografivarianter), `Button` (snedställd/pill, 5 varianter, 4 storlekar), `ProgressBar` (tjock, snedställd, segment-markeringar, Reanimated), `Chip`, `Card` (med sned accentstripe), `SlantBox` (parallellogram), `Screen`, `SectionTitle`.
+- **`primitives/`** – `Text` (typografivarianter), `Button` (snedställd/pill, 5 varianter, 4 storlekar), `ProgressBar` (tjock, snedställd, segment-markeringar, Reanimated), `Chip`, `Card` (med sned accentstripe; ett pressbart kort blir `<button>` på webben, därför läggs egna knappar i `footer`-propen som renderas *utanför* den pressbara ytan – HTML tillåter inte `<button>` i `<button>`), `SlantBox` (parallellogram), `Screen`, `SectionTitle`.
 - **`components/`** – `WorkoutCard`, `IntensityMeter` (5 segment + stora ± knappar), `InteractionPicker`, `MuscleImpactBars`, `StatTile`.
 
 ### `src/features` – skärmar
@@ -462,13 +470,15 @@ npm test
 | `core/__tests__/planner.test.ts` | Utplattning, varv, vila-regler, felhantering |
 | `core/__tests__/intensity.test.ts` | Skala, klämning, readiness-mappning |
 | `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, paus, intensitet mitt i set, alla tre interaktionsnivåer |
-| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar |
+| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål) och **vilo-tips** (`off`/`one`/`full`, inga tips mellan set av samma övning) |
+| `core/__tests__/voice.test.ts` | Röstrankningen (premium > enhanced > standard > legacy) och energi-förvalens rate/pitch |
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik |
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, kopiering med varv, repository-CRUD |
 | `core/__tests__/theme.test.ts` | Paletten är komplett, kontrasthjälparen väljer rätt textfärg |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera. Endast TTS/haptik/lagring/typsnitt mockas. |
+| `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning). Endast TTS/haptik/lagring/typsnitt mockas. |
 
-84 tester, ~7 s. Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+94 tester, ~8 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 
@@ -503,7 +513,10 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 ## Kända begränsningar & nästa steg
 
 - **Bakgrundsljud på iOS** kräver `UIBackgroundModes: audio` (finns i `app.json`) *och* en aktiv audiosession; det behöver verifieras i en dev-build eftersom Expo Go begränsar bakgrundskörning.
-- **Röstkvalitet** beror helt på enhetens TTS. En inspelad röstpack via `SpeechPort` skulle ge ett mer premium-intryck.
+- **Röstkvalitet** beror på enhetens TTS. Appen väljer nu den bästa installerade rösten och Inställningar visar en hänvisning om bara standardröster finns (iOS: *Hjälpmedel → Talat innehåll → Röster*, ladda ner t.ex. *Klara (Premium)*; Android: *Text-till-tal → Google-motor → Installera röstdata*). Vill man längre än så finns tre vägar, alla bakom det befintliga `SpeechPort`-gränssnittet utan att röra `Coach`:
+  1. **Moln-TTS** (ElevenLabs, Azure Neural, Google WaveNet) – klart mest levande, kräver API-nyckel, nätverk under passet och förcachning av de ~200 fasta replikerna (siffror, cues) för att räkningen inte ska släpa. En `CloudSpeech implements SpeechPort` med lokal cache (`expo-file-system` + `expo-av`) är den naturliga formen.
+  2. **Förinspelad röstpack** – en riktig coach spelar in skriptet i `script.ts`; dynamiska delar (övningsnamn, siffror) sätts ihop av klipp. Bäst kvalitet offline, men allt nytt innehåll kräver ny inspelning.
+  3. **Hybrid** – klipp/moln för fasta repliker, enhets-TTS som reserv för dynamisk text.
 - **Kalorier** är uppskattningar (MET-modell); ingen pulsdata.
 - **Egna pass är enkla:** en platt lista (inga block/varv) – medvetet, för att byggaren ska vara snabb att använda. Modellen kompileras till samma `Workout`-form som de färdiga programmen, så block/varv kan läggas till i utkastet senare utan att röra motorn.
 - **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
@@ -524,13 +537,13 @@ src/
   core/                   ren TS: domain, engine, coach, intensity, metrics, utils
   content/                exercises, blocks, workouts
   data/                   repositories (types, local), storage (KeyValueStore, AsyncStorage)
-  adapters/               speech/ExpoSpeech, haptics
+  adapters/               speech/ExpoSpeech + speechInstance, haptics
   state/                  settingsStore, historyStore, customWorkoutStore, sessionStore
   hooks/                  useI18n, useAppFonts
   i18n/                   sv, en, format-hjälpare
   theme/                  tokens
   ui/                     primitives, components (WorkoutCard, ExerciseSheet, IntensityMeter, …)
-  features/               library, workout-detail, workout-builder, session, summary, history, settings
+  features/               library, workout-detail, workout-builder, session, summary, history, settings (+ VoicePicker)
   __tests__/              flow.e2e.test.tsx
 jest.config.js  jest.setup.ts  babel.config.js  metro.config.js  tsconfig.json  app.json
 ```

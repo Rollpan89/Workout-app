@@ -12,6 +12,7 @@ module.exports = {
     '/node_modules/react-native-reanimated/plugin/',
     '/node_modules/@react-native/babel-preset/',
   ],
-  testPathIgnorePatterns: ['/node_modules/', '/.expo/'],
+  // *.web.test.tsx render through react-native-web – see jest.web.config.js
+  testPathIgnorePatterns: ['/node_modules/', '/.expo/', '\\.web\\.test\\.tsx$'],
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts', '!src/**/index.ts', '!src/core/testing/**'],
 };

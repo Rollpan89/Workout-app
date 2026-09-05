@@ -83,7 +83,7 @@ export function Button({
         style,
       ]}
       {...rest}
-    >
+    > 
       <View
         pointerEvents="none"
         style={[

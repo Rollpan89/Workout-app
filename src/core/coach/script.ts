@@ -47,6 +47,12 @@ export interface CoachScript {
   readonly motivationLate: readonly string[]; // last reps
   readonly motivationWithName: readonly ((name: string) => string)[];
   readonly restTalk: readonly string[]; // said during longer rests
+  /** Before the rest starts: "Nästa: Armhävningar, 12 repetitioner." */
+  readonly comingUp: (exercise: string, target: string) => string;
+  /** Prefix for a technique tip during rest: "Tips inför armhävningar: …" */
+  readonly tipFor: (exercise: string, tip: string) => string;
+  /** Second/third tip in the same rest, no prefix needed. */
+  readonly tipMore: (tip: string) => string;
   readonly intensityLabels: Readonly<Record<IntensityLabelKey, string>>;
 }
 
@@ -135,6 +141,9 @@ const sv: CoachScript = {
     'Bra. Sänk axlarna, andas.',
     'Drick lite vatten om du behöver.',
   ],
+  comingUp: (exercise, target) => `Nästa: ${exercise}, ${target}.`,
+  tipFor: (exercise, tip) => `Tips inför ${exercise.toLowerCase()}: ${tip}`,
+  tipMore: (tip) => `Och: ${tip}`,
   intensityLabels: SV_LABELS,
 };
 
@@ -195,6 +204,9 @@ const en: CoachScript = {
     'Good. Drop the shoulders, breathe.',
     'Grab some water if you need it.',
   ],
+  comingUp: (exercise, target) => `Coming up: ${exercise}, ${target}.`,
+  tipFor: (exercise, tip) => `Tip for ${exercise.toLowerCase()}: ${tip}`,
+  tipMore: (tip) => `Also: ${tip}`,
   intensityLabels: EN_LABELS,
 };
 

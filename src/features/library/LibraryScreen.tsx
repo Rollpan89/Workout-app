@@ -22,6 +22,7 @@ export function LibraryScreen() {
   const displayName = useSettingsStore((s) => s.settings.profile.displayName);
   const logs = useHistoryStore((s) => s.logs);
   const customWorkouts = useCustomWorkoutStore((s) => s.workouts);
+  const removeCustom = useCustomWorkoutStore((s) => s.remove);
   const summary = useMemo(() => summarizeHistory(logs), [logs]);
 
   const byGoal = (list: readonly Workout[]) => (goal === 'all' ? list : list.filter((w) => w.goal === goal));
@@ -30,6 +31,8 @@ export function LibraryScreen() {
 
   const open = (workout: Workout) => router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
   const createNew = () => router.push({ pathname: '/builder/[id]', params: { id: 'new' } });
+  const editCustom = (workout: Workout) => router.push({ pathname: '/builder/[id]', params: { id: workout.id } });
+  const deleteCustom = (workout: Workout) => void removeCustom(workout.id);
 
   return (
     <Screen>
@@ -82,7 +85,7 @@ export function LibraryScreen() {
         <>
           <SectionTitle title={t.builder.mySection} hint={f(t.builder.customCount, { count: mine.length })} />
           {mine.map((w) => (
-            <WorkoutCard key={w.id} workout={w} onPress={open} />
+            <WorkoutCard key={w.id} workout={w} onPress={open} onEdit={editCustom} onDelete={deleteCustom} />
           ))}
           <SectionTitle title={t.builder.builtInSection} style={styles.sectionGap} />
         </>

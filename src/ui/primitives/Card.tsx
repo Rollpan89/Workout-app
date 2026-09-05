@@ -8,27 +8,46 @@ export interface CardProps extends Omit<PressableProps, 'style'> {
   accentColor?: string;
   padding?: number;
   children: React.ReactNode;
+  /**
+   * Interactive content (buttons, chips) rendered inside the card surface but
+   * *outside* the pressable area. Required for nested controls on a pressable
+   * card: on web a pressable card is a `<button>`, and HTML forbids a
+   * `<button>` inside a `<button>`.
+   */
+  footer?: React.ReactNode;
 }
 
 /** Elevated surface with an optional slanted accent stripe on the left. */
-export function Card({ style, accentColor, padding = spacing.lg, children, onPress, testID, ...rest }: CardProps) {
-  const body = (
-    <View style={[styles.card, { padding }, style]} testID={onPress ? undefined : testID}>
-      {accentColor ? <View style={[styles.stripe, { backgroundColor: accentColor }]} /> : null}
-      {children}
-    </View>
-  );
-  if (!onPress) return body;
+export function Card({ style, accentColor, padding = spacing.lg, children, footer, onPress, testID, ...rest }: CardProps) {
+  const stripe = accentColor ? <View style={[styles.stripe, { backgroundColor: accentColor }]} /> : null;
+
+  if (!onPress) {
+    return (
+      <View style={[styles.card, { padding }, style]} testID={testID}>
+        {stripe}
+        {children}
+        {footer}
+      </View>
+    );
+  }
+
+  // Pressable surface: only `children` live inside the button. The footer is a
+  // sibling in the same visual card, so nested controls stay valid HTML and do
+  // not need stopPropagation hacks to avoid triggering the card press.
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => pressed && styles.pressed}
-      testID={testID}
-      {...rest}
-    >
-      {body}
-    </Pressable>
+    <View style={[styles.card, style]}>
+      {stripe}
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [styles.pressable, { padding }, pressed && styles.pressed]}
+        testID={testID}
+        {...rest}
+      >
+        {children}
+      </Pressable>
+      {footer ? <View style={[styles.footer, { paddingHorizontal: padding, paddingBottom: padding }]}>{footer}</View> : null}
+    </View>
   );
 }
 
@@ -47,5 +66,7 @@ const styles = StyleSheet.create({
     width: 32,
     transform: [{ skewX: '-12deg' }],
   },
+  pressable: { position: 'relative' },
+  footer: { position: 'relative' },
   pressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
 });

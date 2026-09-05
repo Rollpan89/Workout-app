@@ -41,7 +41,37 @@ export interface VoiceSettings {
   readonly techniqueCues: boolean;
   /** Tempo words ("ner… upp") on slow strength movements. */
   readonly tempoCues: boolean;
+  /** Say which exercise comes next *before* the rest starts (when it changes). */
+  readonly announceNext: boolean;
+  /** Tips for the upcoming exercise during the rest: none, one, or all key points. */
+  readonly restTips: RestTipsLevel;
+  /** Voice identifier chosen by the user (platform-specific), undefined = auto. */
+  readonly voiceId?: string;
+  /** Energy preset – tunes rate/pitch together. */
+  readonly energy: VoiceEnergy;
   readonly haptics: boolean;
+}
+
+export type RestTipsLevel = 'off' | 'one' | 'full';
+export const REST_TIPS_LEVELS: readonly RestTipsLevel[] = ['off', 'one', 'full'];
+
+export type VoiceEnergy = 'calm' | 'energetic' | 'hype';
+export const VOICE_ENERGIES: readonly VoiceEnergy[] = ['calm', 'energetic', 'hype'];
+
+/** Rate/pitch per energy preset. Rate is the user-facing base; the adapter scales per platform. */
+export const VOICE_ENERGY_PRESETS: Readonly<Record<VoiceEnergy, { rate: number; pitch: number }>> = {
+  calm: { rate: 0.95, pitch: 1.0 },
+  energetic: { rate: 1.1, pitch: 1.08 },
+  hype: { rate: 1.2, pitch: 1.15 },
+};
+
+/** Rate/pitch actually sent to the TTS: user tempo × energy preset. */
+export function effectiveVoiceParams(voice: VoiceSettings): { rate: number; pitch: number } {
+  const preset = VOICE_ENERGY_PRESETS[voice.energy] ?? VOICE_ENERGY_PRESETS.energetic;
+  return {
+    rate: Math.min(2, Math.max(0.5, voice.rate * preset.rate)),
+    pitch: Math.min(2, Math.max(0.5, voice.pitch * preset.pitch)),
+  };
 }
 
 export interface AppSettings {
@@ -63,6 +93,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     motivation: true,
     techniqueCues: true,
     tempoCues: true,
+    announceNext: true,
+    restTips: 'one',
+    energy: 'energetic',
     haptics: true,
   },
   profile: {
