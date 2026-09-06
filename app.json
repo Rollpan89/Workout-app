@@ -18,8 +18,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "se.pulsecoach.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
-      }
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      },
+      "buildNumber": "1"
     },
     "android": {
       "package": "se.pulsecoach.app",
@@ -29,7 +32,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
@@ -46,7 +50,15 @@
           "resizeMode": "contain",
           "backgroundColor": "#121214"
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": true

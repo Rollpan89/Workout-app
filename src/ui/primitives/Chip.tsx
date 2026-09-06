@@ -11,9 +11,10 @@ export interface ChipProps {
   color?: string;
   style?: StyleProp<ViewStyle>;
   slanted?: boolean;
+  testID?: string;
 }
 
-export function Chip({ label, selected, onPress, color = colors.red, style, slanted = true }: ChipProps) {
+export function Chip({ label, selected, onPress, color = colors.red, style, slanted = true, testID }: ChipProps) {
   const bg = selected ? color : colors.surface;
   const fg = selected ? onAccent(color) : colors.textMuted;
   return (
@@ -21,6 +22,7 @@ export function Chip({ label, selected, onPress, color = colors.red, style, slan
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
+      testID={testID}
       disabled={!onPress}
       style={({ pressed }) => [styles.root, pressed && styles.pressed, style]}
     >

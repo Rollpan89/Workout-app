@@ -1,12 +1,14 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, StyleSheet, View } from 'react-native';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { PlanStep, SessionSnapshot } from '@/core/engine/types';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDuration } from '@/i18n';
+import { haptic } from '@/adapters/haptics/haptics';
 import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors, spacing } from '@/theme';
@@ -33,12 +35,27 @@ export function SessionScreen() {
       skipRest: s.skipRest,
       skipStep: s.skipStep,
       adjustIntensity: s.adjustIntensity,
+      adjustTempo: s.adjustTempo,
       stop: s.stop,
     };
   }, []);
   const [confirmEnd, setConfirmEnd] = useState(false);
 
   useKeepAwakeIf(keepAwake);
+  useLandscapeAllowed();
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+
+  // Blind pause: double-tap anywhere on the big display toggles pause, so
+  // the phone can stay in the pocket / on the floor without aiming for a button.
+  const onDisplayTap = useDoubleTap(
+    useCallback(() => {
+      const phase = useSessionStore.getState().snapshot?.phase;
+      if (!phase || phase === 'awaitingStart' || phase === 'finished' || phase === 'idle') return;
+      haptic(phase === 'paused' ? 'go' : 'warn');
+      actions.togglePause();
+    }, [actions]),
+  );
 
   // Navigate to the summary when the engine finishes
   useEffect(() => {
@@ -79,8 +96,60 @@ export function SessionScreen() {
     ]);
   };
 
+  const display = (
+    <Pressable
+      style={[styles.middle, landscape && styles.middleLandscape]}
+      onPress={onDisplayTap}
+      accessibilityRole="button"
+      accessibilityLabel={isPaused ? t.session.resume : t.session.pause}
+      accessibilityHint={t.session.doubleTapHint}
+      testID="phase-display"
+    >
+      <PhaseDisplay snapshot={snapshot} phase={phase} nextStep={nextStep} isPaused={isPaused} />
+      <Text variant="labelSmall" color={colors.textDim} upper style={styles.tapHint}>
+        {t.session.doubleTapHint}
+      </Text>
+    </Pressable>
+  );
+
+  const controls = (
+    <View style={[styles.bottom, landscape && styles.bottomLandscape]}>
+      <IntensityMeter value={snapshot.intensity} onChange={actions.adjustIntensity} compact />
+      {snapshot.interactionLevel !== 'manual' && snapshot.target?.kind === 'reps' ? (
+        <TempoControl value={snapshot.tempoFactor} onChange={actions.adjustTempo} />
+      ) : null}
+
+      <View style={styles.primaryRow}>
+        <PrimaryAction snapshot={snapshot} phase={phase} isPaused={isPaused} actions={actions} accentColor={accentColor} />
+      </View>
+
+      <View style={styles.secondaryRow}>
+        <Button label={t.session.end} variant="ghost" size="md" onPress={askEnd} testID="end-session" />
+        <Button
+          label={isPaused ? t.session.resume : t.session.pause}
+          variant="secondary"
+          size="md"
+          onPress={actions.togglePause}
+          disabled={phase === 'awaitingStart'}
+          testID="toggle-pause"
+        />
+        <Button label={t.session.skip} variant="ghost" size="md" onPress={actions.skipStep} testID="skip-step" />
+      </View>
+    </View>
+  );
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.md }]}>
+    <View
+      style={[
+        styles.root,
+        {
+          paddingTop: insets.top + spacing.sm,
+          paddingBottom: insets.bottom + spacing.md,
+          paddingLeft: spacing.lg + insets.left,
+          paddingRight: spacing.lg + insets.right,
+        },
+      ]}
+    >
       {/* Top: overall progress + time */}
       <View style={styles.top}>
         <View style={styles.topRow}>
@@ -98,32 +167,19 @@ export function SessionScreen() {
         <ProgressBar progress={overall} color={colors.orange} height={10} segments={Math.min(snapshot.totalSteps, 24)} />
       </View>
 
-      {/* Middle: the big phase display */}
-      <View style={styles.middle}>
-        <PhaseDisplay snapshot={snapshot} phase={phase} nextStep={nextStep} isPaused={isPaused} />
-      </View>
-
-      {/* Bottom: intensity + controls */}
-      <View style={styles.bottom}>
-        <IntensityMeter value={snapshot.intensity} onChange={actions.adjustIntensity} compact />
-
-        <View style={styles.primaryRow}>
-          <PrimaryAction snapshot={snapshot} phase={phase} isPaused={isPaused} actions={actions} accentColor={accentColor} />
+      {/* Portrait: display above controls. Landscape (phone on the floor,
+          propped against a dumbbell): display left, controls right. */}
+      {landscape ? (
+        <View style={styles.landscapeRow}>
+          {display}
+          {controls}
         </View>
-
-        <View style={styles.secondaryRow}>
-          <Button label={t.session.end} variant="ghost" size="md" onPress={askEnd} testID="end-session" />
-          <Button
-            label={isPaused ? t.session.resume : t.session.pause}
-            variant="secondary"
-            size="md"
-            onPress={actions.togglePause}
-            disabled={phase === 'awaitingStart'}
-            testID="toggle-pause"
-          />
-          <Button label={t.session.skip} variant="ghost" size="md" onPress={actions.skipStep} testID="skip-step" />
-        </View>
-      </View>
+      ) : (
+        <>
+          {display}
+          {controls}
+        </>
+      )}
 
       {confirmEnd ? (
         <View style={styles.overlay}>
@@ -149,6 +205,50 @@ export function SessionScreen() {
           </View>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+const DOUBLE_TAP_MS = 350;
+
+/** Returns an onPress handler that fires `onDoubleTap` on two taps within DOUBLE_TAP_MS. */
+function useDoubleTap(onDoubleTap: () => void): () => void {
+  const last = useRef(0);
+  return useCallback(() => {
+    const now = Date.now();
+    if (now - last.current < DOUBLE_TAP_MS) {
+      last.current = 0;
+      onDoubleTap();
+    } else {
+      last.current = now;
+    }
+  }, [onDoubleTap]);
+}
+
+/** Slower / faster rep count. Shown as "Tempo −  1.0×  +" so it reads at arm's length. */
+function TempoControl({ value, onChange }: { value: number; onChange: (delta: 1 | -1) => void }) {
+  const { t } = useI18n();
+  return (
+    <View style={styles.tempoRow} accessibilityRole="adjustable" accessibilityLabel={t.session.tempo} accessibilityValue={{ text: `${value.toFixed(1)}×` }}>
+      <Button
+        label={`− ${t.session.tempoSlower}`}
+        variant="ghost"
+        size="sm"
+        onPress={() => onChange(1)}
+        accessibilityLabel={t.session.tempoSlower}
+        testID="tempo-slower"
+      />
+      <Text variant="label" color={colors.textMuted} upper testID="tempo-value">
+        {t.session.tempo} {value.toFixed(1)}×
+      </Text>
+      <Button
+        label={`${t.session.tempoFaster} +`}
+        variant="ghost"
+        size="sm"
+        onPress={() => onChange(-1)}
+        accessibilityLabel={t.session.tempoFaster}
+        testID="tempo-faster"
+      />
     </View>
   );
 }
@@ -233,6 +333,20 @@ function stepFraction(s: SessionSnapshot): number {
   return 0;
 }
 
+/**
+ * Allow rotation on this screen only. The rest of the app is portrait
+ * (app.json); a phone lying on the floor is often easier to read sideways.
+ */
+function useLandscapeAllowed() {
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    ScreenOrientation.unlockAsync().catch(() => undefined);
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+    };
+  }, []);
+}
+
 function useKeepAwakeIf(enabled: boolean) {
   // expo-keep-awake's hook cannot be conditional, so wrap it.
   const Hook = enabled ? useKeepAwake : () => undefined;
@@ -240,14 +354,19 @@ function useKeepAwakeIf(enabled: boolean) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
+  root: { flex: 1, backgroundColor: colors.bg },
+  landscapeRow: { flex: 1, flexDirection: 'row', gap: spacing.xl, alignItems: 'stretch' },
+  middleLandscape: { flex: 1.2 },
+  bottomLandscape: { flex: 1, justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center' },
   top: { gap: spacing.sm },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   middle: { flex: 1, justifyContent: 'center' },
+  tapHint: { textAlign: 'center', marginTop: spacing.sm },
   bottom: { gap: spacing.md },
   primaryRow: { marginTop: spacing.xs },
   secondaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tempoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -spacing.xs },
   manualRow: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
   overlay: {

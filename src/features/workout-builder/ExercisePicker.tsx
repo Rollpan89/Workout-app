@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EXERCISES } from '@/content';
@@ -67,10 +67,15 @@ function PickerContent({ color, onPick, onClose }: Omit<ExercisePickerProps, 'vi
           ))}
         </View>
 
-        <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
-          {results.map((exercise) => (
+        <FlatList
+          data={results}
+          keyExtractor={(exercise) => exercise.id}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={12}
+          windowSize={5}
+          renderItem={({ item: exercise }) => (
             <Pressable
-              key={exercise.id}
               onPress={() => onPick(exercise)}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
               accessibilityRole="button"
@@ -88,13 +93,13 @@ function PickerContent({ color, onPick, onClose }: Omit<ExercisePickerProps, 'vi
                 +
               </Text>
             </Pressable>
-          ))}
-          {results.length === 0 ? (
+          )}
+          ListEmptyComponent={
             <Text variant="body" color={colors.textMuted} style={styles.empty}>
               {t.library.empty}
             </Text>
-          ) : null}
-        </ScrollView>
+          }
+        />
     </View>
   );
 }

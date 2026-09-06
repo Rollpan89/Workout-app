@@ -19,8 +19,10 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 11. [Designsystem](#designsystem)
 12. [Språk (i18n)](#språk-i18n)
 13. [Testning](#testning)
-14. [Bygga vidare – kokbok](#bygga-vidare--kokbok)
-15. [Kända begränsningar & nästa steg](#kända-begränsningar--nästa-steg)
+14. [Verifiering på riktig enhet – protokoll](#verifiering-på-riktig-enhet--protokoll)
+15. [Bygga en APK och testa på mobilen](#bygga-en-apk-och-testa-på-mobilen)
+16. [Bygga vidare – kokbok](#bygga-vidare--kokbok)
+17. [Kända begränsningar & nästa steg](#kända-begränsningar--nästa-steg)
 
 ---
 
@@ -42,7 +44,7 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Historik med streak, totaler och muskelbalans | ✅ |
 | Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, tips under vilan), haptik, profil | ✅ |
 | Håller skärmen tänd under pass; **sessionsskärmen får roteras** (liggande: display till vänster, kontroller till höger) | ✅ |
-| **Audiosession under passet** (v4): rösten fortsätter med släckt skärm, spelar i ljudlöst läge och *duckar* musik i stället för att stoppa den | ✅ |
+| **Audiosession under passet** (v4): rösten fortsätter med släckt skärm, spelar i ljudlöst läge och *duckar* musik i stället för att stoppa den. Den tysta keep-alive-spelaren är också **motorns klocka när Android fryser JS-timers** (v4.1) | ✅ |
 | **Bakgrunds-tålig räkning** (v4): efter ett samtal/appbyte hoppar motorn över tiden du inte kunde höra och coachen säger var ni är – aldrig 15 siffror i en klump | ✅ |
 | **Justerbart räknetempo** (v4): Lugnt / Normalt / Snabbt före start, ± under setet, **minns per övning** | ✅ |
 | **Fortsätt passet?** (v4): pågående pass checkpointas var 5:e sekund – krasch, app-död eller tomt batteri förlorar inte passet | ✅ |
@@ -66,7 +68,7 @@ npm run typecheck  # tsc --noEmit
 npm run lint       # ESLint (expo-config)
 ```
 
-**Krav:** Node 20+, npm 10+. För iOS/Android: Expo Go-appen på telefonen eller en simulator/emulator.
+**Krav:** Node 20+, npm 10+. För snabb utveckling räcker Expo Go-appen på telefonen eller en simulator/emulator – men allt som rör **bakgrundsljud** (räkning med släckt skärm, duckning) kräver ett riktigt bygge. Se [Bygga en APK och testa på mobilen](#bygga-en-apk-och-testa-på-mobilen).
 
 > **Om röst på web:** Web Speech API kräver ofta en användarinteraktion innan ljud får spelas. Tryck "Testa rösten" i Inställningar en gång så är det aktiverat.
 >
@@ -226,6 +228,7 @@ Rena funktioner som körs när `finished` emitteras. Se [Kalorier & muskelpåver
 - **`speech/speechInstance.ts`** – en delad `ExpoSpeech`-instans för hela appen (`getSpeech()`), så att rösten du väljer i Inställningar är den som talar i passet. `applyVoiceSettings()` anropas när inställningarna ändras.
 - **`haptics/haptics.ts`** – `haptic('rep' | 'go' | 'done' | 'warn' | 'tap')`. No-op på web.
 - **`audio/audioSession.ts`** (v4) – `AudioSessionPort` ovanpå `expo-audio`. `begin()` vid passstart: `setAudioModeAsync({ playsInSilentMode, shouldPlayInBackground, interruptionMode: 'duckOthers' })` + en **tyst 2-sekunders WAV i loop** (`assets/audio/silence.wav`, 32 kB) som håller iOS-audiosessionen vid liv med släckt skärm. `end()` ~4 s efter sista repliken så musiken kommer tillbaka. `NullAudioSession` för tester/web. Varför inte bara `UIBackgroundModes: audio`? Rättigheten tillåter bakgrundsljud men skapar ingen session – expo-speech river sin efter varje replik.
+  **Bakgrundsklocka (v4.1):** `begin({ onTick })` prenumererar på spelarens `playbackStatusUpdate`-händelser (`BACKGROUND_TICK_MS` = 250 ms) och anropar `engine.tick()` från dem. Skälet: när skärmen släcks eller appen läggs i bakgrunden på Android pausar React Native *alla* JS-timers (`JavaTimerManager.onHostPause`) – `setInterval` i `sessionStore` står stilla tills appen syns igen, medan native-händelser fortfarande levereras till JS-tråden. Utan detta skulle coachen tystna efter första repliken med släckt skärm och sedan "hinna ikapp" när du låser upp. iOS kör timers vidare så länge audiosessionen är aktiv; där är de extra ticken bara redundanta (`tick()` är idempotent för samma tidpunkt).
 - **`crash/crashReporter.ts`** (v4) – `CrashReporter`-port. Standard: `ConsoleCrashReporter` (loggar bara). Sentry pluggas in med `setCrashReporter(new SentryCrashReporter())` – ingen native-dependency förrän man faktiskt vill ha den. Rapportering är **opt-in** (`settings.crashReports`, av som standard).
 
 ### `src/data` – repository-lagret
@@ -495,11 +498,12 @@ npm test
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik, **jämförelse med förra passet**, **kaloriintervall** |
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, **varv/cirklar** (kompilering, klämning, kopiering behåller varv), repository-CRUD, **historik-tak (365) + checkpoint-rundtur** |
 | `core/__tests__/theme.test.ts` | Paletten är komplett, `onAccent` väljer rätt textfärg, **WCAG-golv**: text ≥ 7:1, muted/dim ≥ 4,5:1 på alla ytor, text-på-accent ≥ 3:1 |
+| `adapters/__tests__/audioSession.test.ts` | Audiosessionen: rätt `setAudioModeAsync`-läge, tyst loop, **statushändelser → ticks**, prenumerationen släpps vid `end()`, idempotens, `end()` under pågående `begin()`, trasig native-modul |
 | `ui/__tests__/ErrorBoundary.test.tsx` | Fångar renderfel, visar svensk felsida, lämnar felet till `CrashReporter`, återhämtar sig på "Starta om" |
 | `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
 
-119 tester, ~9 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+126 tester, ~10 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 
@@ -509,7 +513,7 @@ Det som gör appen värd något – att rösten fortsätter räkna med skärmen 
 
 **Förutsättningar**
 
-- **Dev-build**, inte Expo Go: `npx expo run:ios` / `npx expo run:android` (eller EAS `development`-profil). Expo Go saknar `UIBackgroundModes: audio`-rättigheten och `expo-audio`-konfigurationen, så bakgrundsljud *kan* fungera ojämnt där utan att det säger något om produktionsbygget.
+- **Eget bygge**, inte Expo Go: en APK enligt [bygg-guiden](#bygga-en-apk-och-testa-på-mobilen) eller `npx expo run:ios` / `npx expo run:android`. Expo Go saknar `UIBackgroundModes: audio`-rättigheten, `expo-audio`-manifestet (foreground-service) och rättigheterna som `app.json` deklarerar, så bakgrundsljud *kan* fungera ojämnt där utan att det säger något om produktionsbygget.
 - En fysisk iPhone (iOS 17+) och en Android-telefon (Android 12+, gärna en tillverkare med aggressiv batterihantering – Samsung/Xiaomi).
 - Ett pass med minst tre övningar och rep-baserade set, t.ex. *Full Body Blast*, hands-free.
 
@@ -535,7 +539,74 @@ Det som gör appen värd något – att rösten fortsätter räkna med skärmen 
 1. `npx expo config --type introspect | grep -A3 UIBackgroundModes` → ska innehålla `audio`.
 2. Kontrollera att `getAudioSession().begin()` körs (lägg en `console.log` i `ExpoAudioSession.begin`) och att `setAudioModeAsync` inte kastar.
 3. iOS: i Xcode → *Signing & Capabilities* måste *Background Modes → Audio* vara ikryssat i det genererade projektet (prebuild gör det via `app.json`).
-4. Android 13+: `expo-audio` behöver notis-behörighet för långvarig bakgrundsuppspelning om passet är längre än ~3 min; följ `expo-audio`-dokumentationen för `setActiveForLockScreen` om det behövs (medvetet inte påslaget – kräver ett notisdesign-beslut).
+4. Android: `adb logcat | grep -i "audio\|pulsecoach"` medan skärmen är släckt. Kommer inga repliker alls efter första? Kontrollera att `createAudioPlayer` faktiskt anropas med `updateInterval: 250` och att `playbackStatusUpdate` fortsätter ticka (lägg en `console.log` i `onTick`) – det är den vägen motorn drivs när JS-timers är frusna. Räkningen fortsätter men tystnar efter ~3–10 min? Då har tillverkarens batterioptimering strypt processen: undanta PulseCoach under *Batteri → Obegränsad* (Samsung: *Appar som aldrig sover*) och överväg `setActiveForLockScreen` (låsskärmskontroller + notis via `AudioControlsService`; kräver `interruptionMode: 'doNotMix'` och därmed ingen duckning – medvetet inte påslaget).
+
+---
+
+## Bygga en APK och testa på mobilen
+
+Expo Go räcker för att klicka runt i UI:t, men **inte** för det appen egentligen handlar om: att rösten fortsätter räkna med släckt skärm. Det kräver ett eget bygge där `app.json`-konfigurationen (`UIBackgroundModes: audio`, `expo-audio`-pluginen med foreground-service-deklarationen, inga mikrofonrättigheter) faktiskt hamnar i manifestet. Två vägar – välj den som passar din dator.
+
+### Vad som redan är förberett i repot
+
+| Fil | Innehåll |
+|---|---|
+| `app.json` | `android.package: se.pulsecoach.app`, `versionCode: 1`, adaptiva ikoner, plugin `expo-audio` med `recordAudioAndroid: false` + `microphonePermission: false` (appen ber **aldrig** om mikrofon), plugin `expo-screen-orientation`. Resulterande Android-rättigheter: `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `VIBRATE` (+ RN:s standard `INTERNET`). |
+| `eas.json` | Profiler: **`preview`** (release-APK, intern distribution – *den du vill ha*), `development` (dev-client-APK), `production` (AAB för Play). |
+| `package.json` | `npm run android:apk` (prebuild + `assembleRelease`) och `npm run android:device` (bygg + installera via USB). |
+
+Kontrollera vad som kommer att genereras utan att bygga: `npx expo config --type introspect | grep -A12 permissions`.
+
+### Väg A – EAS Build i molnet (ingen Android Studio behövs)
+
+Kräver ett gratis Expo-konto. Gratisplanen räcker gott för testbyggen (15 Android-byggen/månad, kön kan ta 10–30 min).
+
+```bash
+npm install -g eas-cli
+eas login                       # eller eas whoami
+eas init                        # kopplar projektet till ditt konto (skriver projectId i app.json)
+eas build -p android --profile preview
+```
+
+Första gången frågar EAS om den får skapa en **Android keystore** åt dig – svara ja (den sparas i ditt Expo-konto och återanvänds; behövs för att uppdateringar ska kunna installeras ovanpå varandra). När bygget är klart får du en länk + QR-kod:
+
+1. Öppna länken på telefonen (eller skanna QR-koden) → **Install**.
+2. Android frågar om *installera okända appar* för webbläsaren – tillåt en gång.
+3. Klart. Senare byggen: `eas build:run -p android --latest` installerar direkt på en USB-ansluten telefon/emulator.
+
+> Nytt bygge med samma `versionCode` går bra att installera över det gamla under test. Öka `android.versionCode` i `app.json` inför riktig distribution.
+
+### Väg B – bygga lokalt (Android Studio / SDK + JDK 17)
+
+Snabbare iterationer när det väl är installerat (2–4 min per bygge). Krav: [Android Studio](https://developer.android.com/studio) med SDK Platform 35+, JDK 17 och `ANDROID_HOME` satt (Expo-guiden: *Set up your environment → Android → Development build → Local*).
+
+```bash
+npm install
+npm run android:apk
+# → android/app/build/outputs/apk/release/app-release.apk
+```
+
+Installera på telefonen:
+
+- **USB + adb:** aktivera *Utvecklaralternativ → USB-felsökning* på telefonen, sedan `adb install -r android/app/build/outputs/apk/release/app-release.apk`. Eller allt-i-ett: `npm run android:device` (bygger release-varianten och installerar på vald enhet).
+- **Utan kabel:** skicka APK-filen till telefonen (AirDrop-motsvarighet, Drive, e-post), öppna den och tillåt *installera okända appar*.
+
+Release-APK:n är signerad med **debug-nyckeln** från mallen (`signingConfigs.debug`) – helt OK för test på egna enheter, men den kan inte laddas upp till Play och den kan inte installeras *över* en EAS-signerad version (avinstallera först). `/android` är git-ignorerad; `npm run android:apk` kör alltid `prebuild --clean` så katalogen är en ren produkt av `app.json` och kan slängas när som helst.
+
+### Vad du bör testa först på mobilen
+
+Kör protokollet under [Verifiering på riktig enhet](#verifiering-på-riktig-enhet--protokoll), i den här ordningen: **A2** (låst skärm – hela poängen), **B1** (musik duckas), **C1** (samtal), **E1** (svep bort appen → *Fortsätt passet?*). Fallerar A2 på just din telefon: undanta PulseCoach från batterioptimering (*Inställningar → Appar → PulseCoach → Batteri → Obegränsad*) och kör igen – skillnaden säger om det är OS:et eller appen.
+
+### Vanliga fel
+
+| Symptom | Orsak / åtgärd |
+|---|---|
+| `eas build` klagar på att projektet saknar `extra.eas.projectId` | Kör `eas init` (eller `eas build:configure`) en gång. |
+| `SDK location not found` vid lokalt bygge | Sätt `ANDROID_HOME` (t.ex. `~/Library/Android/sdk` på macOS) eller skapa `android/local.properties` med `sdk.dir=...`. |
+| `Unsupported class file major version` / Gradle-fel om Java | Fel JDK. Använd JDK 17 (`java -version`), t.ex. via Android Studios inbyggda JBR (`export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`). |
+| APK:n installeras inte över befintlig app (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) | Olika signeringsnycklar (EAS vs lokal debug-nyckel). Avinstallera den gamla först. |
+| Rösten tystnar när skärmen släcks | Kör du verkligen APK:n och inte Expo Go? Se felsökningsstegen i protokollet (punkt 4). |
+| Ingen svensk röst / robotröst | Telefonens TTS-data: *Inställningar → System → Språk → Text-till-tal → Google-motor → Installera röstdata → Svenska*. Appen väljer sedan bästa röst automatiskt. |
 
 ---
 
@@ -569,7 +640,7 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 
 ## Kända begränsningar & nästa steg
 
-- **Bakgrundsljud** – appen håller nu en audiosession (`expo-audio`, tyst loop + `shouldPlayInBackground`) så länge passet pågår. Det måste ändå verifieras på riktig hårdvara enligt [protokollet ovan](#verifiering-på-riktig-enhet--protokoll); Expo Go är inte representativt. Android kan stoppa bakgrundsljud efter ~3 min utan låsskärmskontroller (`setActiveForLockScreen`) – inte påslaget ännu.
+- **Bakgrundsljud** – appen håller nu en audiosession (`expo-audio`, tyst loop + `shouldPlayInBackground`) så länge passet pågår, och på Android drivs motorn av spelarens statushändelser när JS-timers är frusna. Det måste ändå verifieras på riktig hårdvara enligt [protokollet ovan](#verifiering-på-riktig-enhet--protokoll); Expo Go är inte representativt. Aggressiva batterioptimeringar (Samsung, Xiaomi, Huawei) kan fortfarande frysa processen efter några minuter utan en synlig medianotis (`setActiveForLockScreen`) – inte påslaget ännu eftersom det kräver `doNotMix` (ingen duckning av musik).
 - **Röstkvalitet** beror på enhetens TTS. Appen väljer nu den bästa installerade rösten och Inställningar visar en hänvisning om bara standardröster finns (iOS: *Hjälpmedel → Talat innehåll → Röster*, ladda ner t.ex. *Klara (Premium)*; Android: *Text-till-tal → Google-motor → Installera röstdata*). Vill man längre än så finns tre vägar, alla bakom det befintliga `SpeechPort`-gränssnittet utan att röra `Coach`:
   1. **Moln-TTS** (ElevenLabs, Azure Neural, Google WaveNet) – klart mest levande, kräver API-nyckel, nätverk under passet och förcachning av de ~200 fasta replikerna (siffror, cues) för att räkningen inte ska släpa. En `CloudSpeech implements SpeechPort` med lokal cache (`expo-file-system` + `expo-av`) är den naturliga formen.
   2. **Förinspelad röstpack** – en riktig coach spelar in skriptet i `script.ts`; dynamiska delar (övningsnamn, siffror) sätts ihop av klipp. Bäst kvalitet offline, men allt nytt innehåll kräver ny inspelning.
@@ -578,7 +649,7 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 - **Egna pass är enkla:** en platt lista (inga block/varv) – medvetet, för att byggaren ska vara snabb att använda. Modellen kompileras till samma `Workout`-form som de färdiga programmen, så block/varv kan läggas till i utkastet senare utan att röra motorn.
 - **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
 - **Blind paus via volymknapp** kräver en native-modul utanför Expo SDK (t.ex. `react-native-volume-manager`) – dubbeltryck är implementerat; skak-paus valdes bort eftersom burpees och jumping jacks skulle utlösa den.
-- **Android bakgrundsljud > 3 min** kan kräva `setActiveForLockScreen` (låsskärmskontroller + notis); se protokollet ovan.
+- **Android bakgrundsljud > några minuter** på telefoner med aggressiv batterihantering kan kräva `setActiveForLockScreen` (låsskärmskontroller + notis); se protokollet ovan. Android 17 skärper dessutom kraven på bakgrundsljud (foreground service krävs) – `expo-audio`:s `AudioControlsService` är redan deklarerad i manifestet via config-pluginen, så vägen dit är att aktivera låsskärmsläget, inte att bygga något nytt.
 - **Kandidater för nästa iteration:** egna övningar, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret (utkasten är redan JSON), widgets/Live Activities för vilotimern.
 
 ---
@@ -596,7 +667,7 @@ src/
   core/                   ren TS: domain, engine, coach, intensity, metrics, utils
   content/                exercises, blocks, workouts
   data/                   repositories (types, local), storage (KeyValueStore, AsyncStorage)
-  adapters/               speech/ExpoSpeech + speechInstance, haptics
+  adapters/               speech/ExpoSpeech + speechInstance, haptics, audio/audioSession, crash/crashReporter (+ __tests__)
   state/                  settingsStore, historyStore, customWorkoutStore, sessionStore
   hooks/                  useI18n, useAppFonts
   i18n/                   sv, en, format-hjälpare
@@ -604,5 +675,5 @@ src/
   ui/                     primitives, components (WorkoutCard, ExerciseSheet, IntensityMeter, …)
   features/               library, workout-detail, workout-builder, session, summary, history, settings (+ VoicePicker)
   __tests__/              flow.e2e.test.tsx
-jest.config.js  jest.setup.ts  babel.config.js  metro.config.js  tsconfig.json  app.json
+jest.config.js  jest.setup.ts  babel.config.js  metro.config.js  tsconfig.json  app.json  eas.json
 ```

@@ -31,6 +31,7 @@ export function SettingsScreen() {
   const updateVoice = useSettingsStore((s) => s.updateVoice);
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const setKeepScreenAwake = useSettingsStore((s) => s.setKeepScreenAwake);
+  const setCrashReports = useSettingsStore((s) => s.setCrashReports);
 
   const testVoice = () => {
     const { rate, pitch } = effectiveVoiceParams(settings.voice);
@@ -222,6 +223,17 @@ export function SettingsScreen() {
       </View>
 
       <SectionTitle title={t.settings.about} />
+      <Card padding={0} style={styles.aboutCard}>
+        <Row label={t.settings.crashReports} hint={t.settings.crashReportsDesc} last>
+          <Switch
+            value={settings.crashReports}
+            onValueChange={setCrashReports}
+            trackColor={{ true: colors.red, false: colors.surfaceHigh }}
+            thumbColor={colors.text}
+            testID="toggle-crash-reports"
+          />
+        </Row>
+      </Card>
       <Text variant="bodySmall" color={colors.textDim}>
         {t.common.appName} · {t.settings.version} {Constants.expoConfig?.version ?? '0.1.0'}
       </Text>
@@ -263,6 +275,7 @@ function Row({
 
 const styles = StyleSheet.create({
   heading: { fontSize: 56, lineHeight: 56 },
+  aboutCard: { marginBottom: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
   row: {
     flexDirection: 'row',

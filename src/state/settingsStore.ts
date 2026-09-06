@@ -5,9 +5,11 @@ import {
   type AppSettings,
   type InteractionLevel,
   type Locale,
+  type TempoPreset,
   type UserProfile,
   type VoiceSettings,
 } from '@/core/domain';
+import { getCrashReporter } from '@/adapters/crash/crashReporter';
 import { getRepositories } from '@/data';
 
 interface SettingsState {
@@ -19,6 +21,11 @@ interface SettingsState {
   updateVoice: (patch: Partial<VoiceSettings>) => void;
   updateProfile: (patch: Partial<UserProfile>) => void;
   setKeepScreenAwake: (value: boolean) => void;
+  setCrashReports: (value: boolean) => void;
+  setOnboardingDone: () => void;
+  setTempoPreset: (preset: TempoPreset) => void;
+  /** Remember the tempo the user settled on for an exercise (undefined = forget). */
+  setTempoOverride: (exerciseId: string, factor: number | undefined) => void;
 }
 
 function persist(settings: AppSettings): void {
@@ -41,6 +48,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     hydrate: async () => {
       try {
         const settings = await getRepositories().settings.load();
+        if (settings.crashReports) getCrashReporter().enable();
         set({ settings, hydrated: true });
       } catch (error) {
         console.warn('[settings] hydrate failed', error);
@@ -53,6 +61,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     updateVoice: (patch) => update((s) => ({ ...s, voice: { ...s.voice, ...patch } })),
     updateProfile: (patch) => update((s) => ({ ...s, profile: { ...s.profile, ...patch } })),
     setKeepScreenAwake: (keepScreenAwake) => update((s) => ({ ...s, keepScreenAwake })),
+    setCrashReports: (crashReports) => {
+      if (crashReports) getCrashReporter().enable();
+      else getCrashReporter().disable();
+      update((s) => ({ ...s, crashReports }));
+    },
+    setOnboardingDone: () => update((s) => ({ ...s, onboardingDone: true })),
+    setTempoPreset: (tempoPreset) => update((s) => ({ ...s, tempoPreset })),
+    setTempoOverride: (exerciseId, factor) =>
+      update((s) => {
+        const tempoOverrides = { ...s.tempoOverrides };
+        if (factor === undefined || Math.abs(factor - 1) < 0.001) delete tempoOverrides[exerciseId];
+        else tempoOverrides[exerciseId] = factor;
+        return { ...s, tempoOverrides };
+      }),
   };
 });
 

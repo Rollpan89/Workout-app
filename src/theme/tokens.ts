@@ -15,7 +15,7 @@ export const colors = {
   // Text
   text: '#F5F5F7',
   textMuted: '#A5A5AF',
-  textDim: '#6E6E78',
+  textDim: '#92929E', // ≥ 4.5:1 on bg/surface/surfaceHigh (WCAG AA for small text)
   textOnAccent: '#FFFFFF',
 
   // Accents
@@ -63,7 +63,7 @@ export interface AccentTone {
 
 export const accent: Record<AccentName, AccentTone> = {
   red: { main: colors.red, deep: colors.redDeep, soft: colors.redSoft, on: '#FFFFFF' },
-  orange: { main: colors.orange, deep: colors.orangeDeep, soft: colors.orangeSoft, on: '#FFFFFF' },
+  orange: { main: colors.orange, deep: colors.orangeDeep, soft: colors.orangeSoft, on: '#121214' }, // white was 2.6:1
   yellow: { main: colors.yellow, deep: colors.yellowDeep, soft: colors.yellowSoft, on: '#121214' },
   lime: { main: colors.lime, deep: colors.limeDeep, soft: colors.limeSoft, on: '#121214' },
   cyan: { main: colors.cyan, deep: colors.cyanDeep, soft: colors.cyanSoft, on: '#121214' },
@@ -75,15 +75,33 @@ export const accent: Record<AccentName, AccentTone> = {
 export function onAccent(hex: string): string {
   const tone = Object.values(accent).find((a) => a.main === hex || a.deep === hex);
   if (tone) return tone.on;
+  if (!/^#?([0-9a-f]{6})$/i.test(hex)) return '#FFFFFF';
+  // Pick whichever of dark/white gives the higher WCAG contrast. White wins
+  // ties in the saturated mid-range (red, violet) where it looks better and
+  // still clears 3:1 for the large, bold type used on accent fills.
+  const dark = contrastRatio('#121214', hex);
+  const white = contrastRatio('#FFFFFF', hex);
+  return dark > white * 1.15 ? '#121214' : '#FFFFFF';
+}
+
+/** WCAG 2.x relative luminance of a #RRGGBB colour. */
+export function relativeLuminance(hex: string): number {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return '#FFFFFF';
+  if (!m) return 0;
   const n = parseInt(m[1]!, 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  // Relative luminance (sRGB approx.) – dark text on bright colours.
-  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 160 ? '#121214' : '#FFFFFF';
+  const channel = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
+}
+
+/** WCAG contrast ratio (1–21) between two #RRGGBB colours. */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
 }
 
 export const spacing = {

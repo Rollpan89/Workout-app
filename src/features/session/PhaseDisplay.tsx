@@ -85,7 +85,17 @@ export function PhaseDisplay({ snapshot, phase, nextStep, isPaused }: PhaseDispl
             {headlinePrefix}
           </Text>
         ) : null}
-        <Text variant="h1" upper numberOfLines={2} adjustsFontSizeToFit style={styles.exercise}>
+        <Text
+          variant="h1"
+          upper
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          style={styles.exercise}
+          // The headline changes once per step – that is the right granularity
+          // for a screen reader announcement (the coach handles the counting).
+          accessibilityLiveRegion="polite"
+          accessibilityRole="header"
+        >
           {headline}
         </Text>
         {setLabel && !isResting ? (
@@ -143,7 +153,10 @@ function BigNumber({ value, color }: { value: string; color: string }) {
   const long = value.length > 3;
   return (
     <Animated.Text
-      accessibilityLiveRegion="polite"
+      // Not a live region on purpose: the value changes every second and the
+      // coach already speaks every rep / countdown – announcing it twice
+      // through VoiceOver/TalkBack would drown the coach.
+      accessibilityLiveRegion="none"
       style={[styles.big, { color }, long && styles.bigSmall, style]}
       numberOfLines={1}
       adjustsFontSizeToFit

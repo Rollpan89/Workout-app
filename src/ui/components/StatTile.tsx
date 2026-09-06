@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, spacing } from '@/theme';
+import { colors, onAccent, spacing } from '@/theme';
 import { SlantBox, Text } from '@/ui/primitives';
 
 export interface StatTileProps {
@@ -10,16 +10,17 @@ export interface StatTileProps {
   color?: string;
   /** Solid accent fill vs. subtle surface. */
   emphasis?: boolean;
+  testID?: string;
 }
 
-export function StatTile({ value, label, unit, color = colors.red, emphasis }: StatTileProps) {
+export function StatTile({ value, label, unit, color = colors.red, emphasis, testID }: StatTileProps) {
   const bg = emphasis ? color : colors.surface;
-  const fg = emphasis ? colors.textOnAccent : colors.text;
-  const muted = emphasis ? 'rgba(255,255,255,0.8)' : colors.textMuted;
+  const fg = emphasis ? onAccent(color) : colors.text;
+  const muted = emphasis ? (fg === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(18,18,20,0.75)') : colors.textMuted;
   return (
     <SlantBox color={bg} padding={spacing.md} style={styles.tile} contentStyle={styles.content}>
       <View style={styles.valueRow}>
-        <Text variant="stat" color={fg} numberOfLines={1} adjustsFontSizeToFit>
+        <Text variant="stat" color={fg} numberOfLines={1} adjustsFontSizeToFit testID={testID}>
           {value}
         </Text>
         {unit ? (

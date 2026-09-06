@@ -16,6 +16,7 @@ import type {
   SessionPlan,
   SessionSnapshot,
   SessionStats,
+  SessionCheckpoint,
 } from './types';
 
 export interface SessionEngineOptions {
@@ -26,6 +27,16 @@ export interface SessionEngineOptions {
   readonly getReadySeconds?: number;
   /** Injectable clock for tests. Returns epoch milliseconds. */
   readonly now?: () => number;
+  /**
+   * Upper bound on how many reps a single tick may "catch up" after a long
+   * gap (JS timers freeze while the app is backgrounded). Reps beyond this
+   * are treated as not done: the phase clock is shifted forward so the set
+   * simply continues from where the user can hear the count again.
+   * Default 3. Use Infinity to disable.
+   */
+  readonly maxCatchUpReps?: number;
+  /** Initial rep tempo factor (1 = exercise default; >1 slower, <1 faster). */
+  readonly tempoFactor?: number;
 }
 
 const EMPTY_STATS: SessionStats = {
@@ -58,6 +69,7 @@ export class SessionEngine {
   private readonly plan: SessionPlan;
   private readonly now: () => number;
   private readonly getReadySeconds: number;
+  private readonly maxCatchUpReps: number;
 
   private phase: SessionPhase = 'idle';
   private pausedFrom?: Exclude<SessionPhase, 'paused' | 'idle' | 'finished'>;
@@ -67,6 +79,7 @@ export class SessionEngine {
   private target?: ResolvedPrescription;
 
   private repsDone = 0;
+  private tempoFactor = 1;
   private lastRepEmittedAt = 0; // ms, phase-relative
   private halfwayEmitted = false;
 
@@ -82,6 +95,8 @@ export class SessionEngine {
     this.plan = options.plan;
     this.now = options.now ?? (() => Date.now());
     this.getReadySeconds = options.getReadySeconds ?? 5;
+    this.maxCatchUpReps = options.maxCatchUpReps ?? 3;
+    this.tempoFactor = clampTempo(options.tempoFactor ?? 1);
     this.intensity = options.intensity ?? DEFAULT_INTENSITY;
     this.interactionLevel = options.interactionLevel;
   }
@@ -235,9 +250,86 @@ export class SessionEngine {
     return to;
   }
 
+  /**
+   * Change the rep tempo. Takes effect from the *next* rep: the already
+   * elapsed part of the current rep window is preserved proportionally so the
+   * count neither stutters nor skips.
+   */
+  setTempoFactor(factor: number, options: { silent?: boolean } = {}): number {
+    const from = this.tempoFactor;
+    const to = clampTempo(factor);
+    if (from === to) return to;
+    if (this.phase === 'working' && this.target?.kind === 'reps') {
+      const step = this.currentStep();
+      const oldCadence = this.cadenceMs(step);
+      this.tempoFactor = to;
+      const newCadence = this.cadenceMs(step);
+      const now = this.now();
+      const intoRep = now - this.phaseStartedAt - this.lastRepEmittedAt;
+      const fraction = Math.min(1, Math.max(0, intoRep / oldCadence));
+      // Re-anchor so that the same fraction of the *new* window has elapsed.
+      this.lastRepEmittedAt = now - this.phaseStartedAt - fraction * newCadence;
+    } else {
+      this.tempoFactor = to;
+    }
+    if (!options.silent) this.events.emit('tempoChanged', { from, to });
+    this.publish();
+    return to;
+  }
+
+  get tempo(): number {
+    return this.tempoFactor;
+  }
+
   setInteractionLevel(level: InteractionLevel): void {
     this.interactionLevel = level;
     this.publish();
+  }
+
+  /** Snapshot everything needed to offer "continue where you left off". */
+  checkpoint(now: number = this.now()): SessionCheckpoint | undefined {
+    if (this.phase === 'idle' || this.phase === 'finished' || this.startedAt === undefined) return undefined;
+    const snap = this.buildSnapshot();
+    return {
+      version: 1,
+      workoutId: this.plan.workout.id,
+      stepIndex: this.stepIndex,
+      intensity: this.intensity,
+      tempoFactor: this.tempoFactor,
+      interactionLevel: this.interactionLevel,
+      startedAt: this.startedAt,
+      savedAt: now,
+      elapsedSeconds: snap.sessionElapsedSeconds,
+      stats: this.stats,
+      totalSteps: this.plan.steps.length,
+    };
+  }
+
+  /**
+   * Start from a checkpoint instead of from the top. Time not covered by the
+   * checkpoint (the crash → restart gap) is booked as pause so the log's
+   * duration stays honest. The interrupted step starts over.
+   */
+  restore(checkpoint: SessionCheckpoint): void {
+    if (this.phase !== 'idle') return;
+    if (checkpoint.workoutId !== this.plan.workout.id) throw new Error('SessionEngine.restore: workout mismatch');
+    const index = Math.min(Math.max(0, checkpoint.stepIndex), this.plan.steps.length - 1);
+    if (this.plan.steps.length === 0) {
+      this.finish(true);
+      return;
+    }
+    const now = this.now();
+    this.stepIndex = index;
+    this.intensity = checkpoint.intensity;
+    this.tempoFactor = clampTempo(checkpoint.tempoFactor);
+    this.interactionLevel = checkpoint.interactionLevel;
+    this.startedAt = checkpoint.startedAt;
+    const gap = Math.max(0, (now - checkpoint.startedAt) / 1000 - checkpoint.elapsedSeconds);
+    this.stats = { ...checkpoint.stats, pausedSeconds: gap };
+    this.events.emit('started', { plan: this.plan });
+    this.events.emit('restored', { step: this.currentStep(), checkpoint });
+    // Same entry as a fresh start: announce (+ countdown), then work or await the tap.
+    this.enterAnnouncing();
   }
 
   /** Abort the session. Stats collected so far are kept. */
@@ -375,12 +467,18 @@ export class SessionEngine {
 
     if (target.kind === 'reps') {
       if (this.interactionLevel === 'manual') return; // user drives reps
-      const cadenceMs = step.exercise.secondsPerRep * 1000;
-      // Emit reps that are "due". Loop handles long gaps between ticks.
-      while (
-        this.repsDone < target.reps &&
-        elapsedMs - this.lastRepEmittedAt >= cadenceMs
-      ) {
+      const cadenceMs = this.cadenceMs(step);
+      // Emit reps that are "due". Loop handles long gaps between ticks…
+      const due = Math.floor((elapsedMs - this.lastRepEmittedAt) / cadenceMs);
+      if (due > this.maxCatchUpReps) {
+        // …but not gaps the user cannot have followed (app was backgrounded):
+        // drop the surplus by moving the phase clock forward, so the count
+        // resumes audibly instead of firing 20 numbers at once.
+        const surplus = (due - this.maxCatchUpReps) * cadenceMs;
+        this.phaseStartedAt += surplus;
+        this.events.emit('gapSkipped', { step, seconds: surplus / 1000 });
+      }
+      while (this.repsDone < target.reps && now - this.phaseStartedAt - this.lastRepEmittedAt >= cadenceMs) {
         this.lastRepEmittedAt += cadenceMs;
         this.registerRep();
       }
@@ -475,6 +573,11 @@ export class SessionEngine {
     };
   }
 
+  /** Milliseconds per rep for a step at the current tempo factor. */
+  private cadenceMs(step: PlanStep): number {
+    return Math.max(300, Math.round(step.exercise.secondsPerRep * 1000 * this.tempoFactor));
+  }
+
   private phaseElapsedSeconds(now: number): number {
     return Math.max(0, (now - this.phaseStartedAt) / 1000);
   }
@@ -510,6 +613,7 @@ export class SessionEngine {
       totalSteps: this.plan.steps.length,
       step,
       intensity: this.intensity,
+      tempoFactor: this.tempoFactor,
       interactionLevel: this.interactionLevel,
       target: this.target,
       repsDone: this.repsDone,
@@ -524,4 +628,11 @@ export class SessionEngine {
       stats: this.stats,
     };
   }
+}
+
+export const TEMPO_MIN = 0.7;
+export const TEMPO_MAX = 1.6;
+function clampTempo(f: number): number {
+  if (!Number.isFinite(f)) return 1;
+  return Math.min(TEMPO_MAX, Math.max(TEMPO_MIN, Math.round(f * 100) / 100));
 }

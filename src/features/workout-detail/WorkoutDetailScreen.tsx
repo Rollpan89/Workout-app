@@ -4,7 +4,7 @@ import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getExercise } from '@/content';
-import type { Exercise, InteractionLevel, ReadinessLevel } from '@/core/domain';
+import { TEMPO_PRESET_FACTOR, TEMPO_PRESETS, type Exercise, type InteractionLevel, type ReadinessLevel, type TempoPreset } from '@/core/domain';
 import { buildSessionPlan, estimatePlanDuration } from '@/core/engine/planner';
 import {
   intensityForReadiness,
@@ -38,6 +38,9 @@ export function WorkoutDetailScreen() {
   const [interaction, setInteraction] = useState<InteractionLevel>(defaultInteraction);
   const [openExercise, setOpenExercise] = useState<{ exercise: Exercise; label: string } | undefined>();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const defaultTempo = useSettingsStore((s) => s.settings.tempoPreset);
+  const setTempoPreset = useSettingsStore((s) => s.setTempoPreset);
+  const [tempo, setTempo] = useState<TempoPreset>(defaultTempo);
 
   const plan = useMemo(() => (workout ? buildSessionPlan(workout, getExercise) : undefined), [workout]);
   const minutes = plan ? Math.round(estimatePlanDuration(plan, intensity) / 60) : 0;
@@ -58,7 +61,8 @@ export function WorkoutDetailScreen() {
   };
 
   const start = () => {
-    startSession({ workout, intensity, interactionLevel: interaction });
+    if (tempo !== defaultTempo) setTempoPreset(tempo); // remember as the new default
+    startSession({ workout, intensity, interactionLevel: interaction, tempoFactor: TEMPO_PRESET_FACTOR[tempo] });
     router.replace('/session');
   };
 
@@ -217,6 +221,22 @@ export function WorkoutDetailScreen() {
           </Card>
         ))}
 
+        <SectionTitle title={t.detail.tempo} color={tone.main} />
+        <View style={styles.chips}>
+          {TEMPO_PRESETS.map((p) => (
+            <Chip
+              key={p}
+              label={t.detail[`tempo${capitalize(p)}` as 'tempoCalm' | 'tempoNormal' | 'tempoFast']}
+              selected={tempo === p}
+              onPress={() => setTempo(p)}
+              color={tone.main}
+            />
+          ))}
+        </View>
+        <Text variant="bodySmall" color={colors.textMuted} style={styles.hint}>
+          {t.detail.tempoHint}
+        </Text>
+
         <SectionTitle title={t.detail.interaction} color={tone.main} />
         <InteractionPicker value={interaction} onChange={setInteraction} />
         <ExerciseSheet
@@ -268,6 +288,7 @@ const styles = StyleSheet.create({
   fact: { flex: 1, gap: 2 },
   factValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
+  hint: { marginTop: spacing.sm },
   block: { marginBottom: spacing.sm },
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: spacing.sm },
   exerciseRow: {

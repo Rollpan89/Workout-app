@@ -328,7 +328,8 @@ describe('Coach – rest and transitions', () => {
     full.speech.spoken.length = 0;
     full.run(20_000);
     const tips = full.texts().filter((l) => l.startsWith('Tips inför') || l.startsWith('Och:'));
-    expect(tips).toEqual(['Tips inför planka: Spänn magen.', 'Och: Rak linje.', 'Och: Andas lugnt.']);
+    // 20 s rest → 'full' degrades to two tips (three only fit in ≥ 45 s)
+    expect(tips).toEqual(['Tips inför planka: Spänn magen.', 'Och: Rak linje.']);
 
     const off = setup({ workout: WORKOUT_CUED, lookup: cuedLookup, voice: { restTips: 'off' } });
     off.engine.start();

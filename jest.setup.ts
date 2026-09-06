@@ -22,6 +22,24 @@ jest.mock('expo-speech', () => ({
   maxSpeechInputLength: 4000,
 }));
 
+jest.mock('expo-audio', () => ({
+  setAudioModeAsync: jest.fn(() => Promise.resolve()),
+  createAudioPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    remove: jest.fn(),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    loop: false,
+    volume: 1,
+  })),
+}));
+
+jest.mock('expo-screen-orientation', () => ({
+  unlockAsync: jest.fn(() => Promise.resolve()),
+  lockAsync: jest.fn(() => Promise.resolve()),
+  OrientationLock: { PORTRAIT_UP: 3, DEFAULT: 0 },
+}));
+
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
   notificationAsync: jest.fn(() => Promise.resolve()),

@@ -74,12 +74,39 @@ export function effectiveVoiceParams(voice: VoiceSettings): { rate: number; pitc
   };
 }
 
+export type TempoPreset = 'calm' | 'normal' | 'fast';
+export const TEMPO_PRESETS: readonly TempoPreset[] = ['calm', 'normal', 'fast'];
+/** Multiplier on `exercise.secondsPerRep` per preset (>1 = slower count). */
+export const TEMPO_PRESET_FACTOR: Readonly<Record<TempoPreset, number>> = {
+  calm: 1.3,
+  normal: 1,
+  fast: 0.8,
+};
+/** Step used by the ± buttons during a set. */
+export const TEMPO_STEP = 0.1;
+
 export interface AppSettings {
   readonly locale: Locale;
   readonly interactionLevel: InteractionLevel;
   readonly voice: VoiceSettings;
   readonly profile: UserProfile;
   readonly keepScreenAwake: boolean;
+  /** Opt-in anonymous crash reporting (default off; nothing leaves the device otherwise). */
+  readonly crashReports: boolean;
+  /** First-run intro has been completed or skipped. */
+  readonly onboardingDone: boolean;
+  /** Default rep tempo for new sessions. */
+  readonly tempoPreset: TempoPreset;
+  /**
+   * Tempo factors the user settled on per exercise (learned from the ±
+   * buttons during a set). Takes precedence over `tempoPreset`.
+   */
+  readonly tempoOverrides: Readonly<Record<string, number>>;
+}
+
+/** Tempo factor to start an exercise with. */
+export function tempoFactorFor(settings: Pick<AppSettings, 'tempoPreset' | 'tempoOverrides'>, exerciseId: string): number {
+  return settings.tempoOverrides[exerciseId] ?? TEMPO_PRESET_FACTOR[settings.tempoPreset] ?? 1;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -105,4 +132,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     goal: 'strength',
   },
   keepScreenAwake: true,
+  crashReports: false,
+  onboardingDone: false,
+  tempoPreset: 'normal',
+  tempoOverrides: {},
 };

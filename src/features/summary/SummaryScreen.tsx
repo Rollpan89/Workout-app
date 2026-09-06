@@ -1,13 +1,15 @@
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { findWorkout } from '@/state/customWorkoutStore';
+import { compareWithPrevious, formatCalorieRange } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDuration } from '@/i18n';
+import { findWorkout } from '@/state/customWorkoutStore';
+import { useHistoryStore } from '@/state/historyStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { colors, spacing } from '@/theme';
-import { MuscleImpactBars, StatTile } from '@/ui/components';
+import { ComparisonRow, MuscleImpactBars, StatTile } from '@/ui/components';
 import { Button, Screen, SectionTitle, Text } from '@/ui/primitives';
 
 export function SummaryScreen() {
@@ -16,6 +18,8 @@ export function SummaryScreen() {
   const result = useSessionStore((s) => s.result);
   const saving = useSessionStore((s) => s.saving);
   const reset = useSessionStore((s) => s.reset);
+  const logs = useHistoryStore((s) => s.logs);
+  const comparison = useMemo(() => (result?.completed ? compareWithPrevious(result, logs) : undefined), [result, logs]);
 
   useEffect(() => {
     if (!result) router.replace('/');
@@ -45,7 +49,13 @@ export function SummaryScreen() {
       </View>
 
       <View style={styles.grid}>
-        <StatTile value={result.estimatedCalories} unit={t.common.kcal} label={t.summary.calories} emphasis />
+        <StatTile
+          value={formatCalorieRange(result.estimatedCalories)}
+          unit={t.common.kcal}
+          label={`${t.summary.calories} · ${t.common.estimate}`}
+          emphasis
+          testID="summary-calories"
+        />
         <StatTile value={formatDuration(result.durationSeconds)} label={t.summary.duration} />
       </View>
       <View style={styles.grid}>
@@ -53,6 +63,12 @@ export function SummaryScreen() {
         <StatTile value={result.totalSets} label={t.summary.sets} />
         <StatTile value={`${Math.round(result.averageIntensity * 100)}%`} label={t.summary.avgIntensity} />
       </View>
+
+      <Text variant="bodySmall" color={colors.textDim} style={styles.note}>
+        {t.common.calorieNote}
+      </Text>
+
+      {comparison ? <ComparisonRow comparison={comparison} /> : null}
 
       <SectionTitle title={t.summary.muscleImpact} color={colors.orange} />
       <MuscleImpactBars impact={result.muscleImpact} limit={8} />
@@ -75,5 +91,6 @@ const styles = StyleSheet.create({
   hero: { gap: spacing.xs, marginBottom: spacing.xl },
   heading: { fontSize: 56, lineHeight: 56 },
   grid: { flexDirection: 'row', marginHorizontal: -6, marginBottom: spacing.md },
+  note: { marginBottom: spacing.md },
   actions: { marginTop: spacing.xxl },
 });

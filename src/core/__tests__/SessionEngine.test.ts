@@ -359,3 +359,115 @@ describe('SessionEngine – manual', () => {
     expect(engine.snapshot.stats.completedSets[0]?.reps).toBe(2);
   });
 });
+
+describe('SessionEngine – background gaps and tempo', () => {
+  function make(opts: Partial<ConstructorParameters<typeof SessionEngine>[0]> = {}) {
+    const clock = new FakeClock();
+    const engine = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now, getReadySeconds: 3, ...opts });
+    const reps: number[] = [];
+    const gaps: number[] = [];
+    engine.events.on('rep', ({ rep }) => reps.push(rep));
+    engine.events.on('gapSkipped', ({ seconds }) => gaps.push(seconds));
+    engine.start();
+    clock.advance(3_000);
+    engine.tick(clock.now()); // countdown done → working (squat, 5 reps @ 2 s)
+    return { engine, clock, reps, gaps };
+  }
+
+  it('catches up at most maxCatchUpReps after a long gap and reports the skipped time', () => {
+    const { engine, clock, reps, gaps } = make({ maxCatchUpReps: 2 });
+    clock.advance(60_000); // app was in the background for a minute
+    engine.tick(clock.now());
+    expect(reps).toEqual([1, 2]); // not 5
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]).toBeCloseTo(56, 0); // 60 s − 2 reps × 2 s
+    expect(engine.snapshot.phase).toBe('working');
+    // the count continues at the normal cadence from here
+    clock.advance(2_000);
+    engine.tick(clock.now());
+    expect(reps).toEqual([1, 2, 3]);
+  });
+
+  it('keeps the old unbounded behaviour when maxCatchUpReps is Infinity', () => {
+    const { engine, clock, reps, gaps } = make({ maxCatchUpReps: Infinity });
+    clock.advance(60_000);
+    engine.tick(clock.now());
+    expect(reps).toEqual([1, 2, 3, 4, 5]);
+    expect(gaps).toEqual([]);
+    expect(engine.snapshot.phase).toBe('resting');
+  });
+
+  it('slows the count when the tempo factor is raised, preserving the current rep window', () => {
+    const { engine, clock, reps } = make();
+    clock.advance(2_000);
+    engine.tick(clock.now()); // rep 1 at 2.0 s
+    clock.advance(1_000); // halfway into rep 2's window (2 s cadence)
+    engine.tick(clock.now());
+    expect(engine.setTempoFactor(1.5)).toBe(1.5); // cadence becomes 3 s
+    // half of the new window has elapsed → next rep in 1.5 s, not 1 s
+    clock.advance(1_000);
+    engine.tick(clock.now());
+    expect(reps).toEqual([1]);
+    clock.advance(600);
+    engine.tick(clock.now());
+    expect(reps).toEqual([1, 2]);
+    clock.advance(3_000);
+    engine.tick(clock.now());
+    expect(reps).toEqual([1, 2, 3]);
+    expect(engine.snapshot.tempoFactor).toBe(1.5);
+  });
+
+  it('clamps the tempo factor to a sane range', () => {
+    const { engine } = make();
+    expect(engine.setTempoFactor(0.1)).toBe(0.7);
+    expect(engine.setTempoFactor(9)).toBe(1.6);
+    expect(engine.setTempoFactor(Number.NaN)).toBe(1);
+  });
+});
+
+describe('SessionEngine – checkpoint / restore', () => {
+  it('serialises progress and resumes at the start of the interrupted step, booking the gap as pause', () => {
+    const clock = new FakeClock();
+    const a = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now, getReadySeconds: 3 });
+    expect(a.checkpoint()).toBeUndefined(); // idle → nothing to save
+    a.start();
+    clock.advance(3_000);
+    a.tick(clock.now()); // working, step 0
+    a.adjustIntensity(1);
+    a.setTempoFactor(1.2);
+    a.completeSet(); // → resting, one set recorded
+    clock.advance(1_000);
+    a.tick(clock.now());
+    const cp = a.checkpoint();
+    expect(cp).toBeDefined();
+    expect(cp?.stepIndex).toBe(0);
+    expect(cp?.intensity).toBe(1.25);
+    expect(cp?.tempoFactor).toBe(1.2);
+    expect(cp?.stats.completedSets).toHaveLength(1);
+    expect(cp?.elapsedSeconds).toBeCloseTo(4, 0);
+
+    // …app dies; 10 minutes later a fresh engine restores from the checkpoint
+    clock.advance(10 * 60_000);
+    const b = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now, getReadySeconds: 3 });
+    const log = record(b, ['started', 'restored', 'exerciseAnnounced']);
+    b.restore(cp!);
+    expect(log).toEqual(['started', 'restored', 'announced:squat']);
+    const snap = b.snapshot;
+    expect(snap.phase).toBe('announcing');
+    expect(snap.stepIndex).toBe(0);
+    expect(snap.intensity).toBe(1.25);
+    expect(snap.tempoFactor).toBe(1.2);
+    expect(snap.stats.completedSets).toHaveLength(1);
+    expect(snap.stats.pausedSeconds).toBeCloseTo(600, 0); // the gap, not training time
+    expect(snap.sessionElapsedSeconds).toBeCloseTo(4, 0);
+  });
+
+  it('refuses to restore a checkpoint from another workout', () => {
+    const clock = new FakeClock();
+    const engine = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now });
+    engine.start();
+    const cp = engine.checkpoint()!;
+    const other = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now });
+    expect(() => other.restore({ ...cp, workoutId: 'someone-else' })).toThrow(/workout mismatch/);
+  });
+});

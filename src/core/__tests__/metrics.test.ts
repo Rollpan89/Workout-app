@@ -2,6 +2,9 @@ import type { SessionLog } from '../domain';
 import type { SessionSnapshot } from '../engine/types';
 import {
   buildSessionLog,
+  calorieRange,
+  compareWithPrevious,
+  formatCalorieRange,
   caloriesFor,
   computeSessionMetrics,
   computeStreak,
@@ -17,6 +20,7 @@ function snapshot(overrides: Partial<SessionSnapshot['stats']> = {}): SessionSna
     stepIndex: 2,
     totalSteps: 3,
     intensity: 1.0,
+    tempoFactor: 1,
     interactionLevel: 'handsFree',
     repsDone: 0,
     workElapsedSeconds: 0,
@@ -168,5 +172,57 @@ describe('history', () => {
     expect(s.sessions).toBe(0);
     expect(s.streakDays).toBe(0);
     expect(s.muscleImpact).toEqual({});
+  });
+});
+
+describe('compareWithPrevious', () => {
+  const base: SessionLog = {
+    id: 'a',
+    workoutId: 'w',
+    startedAt: '2026-09-01T10:00:00.000Z',
+    endedAt: '2026-09-01T10:30:00.000Z',
+    durationSeconds: 1800,
+    workSeconds: 1200,
+    completed: true,
+    averageIntensity: 1,
+    totalReps: 100,
+    totalSets: 10,
+    estimatedCalories: 200,
+    muscleImpact: {},
+  };
+  const later: SessionLog = { ...base, id: 'b', endedAt: '2026-09-03T10:28:00.000Z', durationSeconds: 1680, totalReps: 112, estimatedCalories: 215, averageIntensity: 1.25 };
+
+  it('returns undefined for the first run of a workout', () => {
+    expect(compareWithPrevious(base, [base])).toBeUndefined();
+    expect(compareWithPrevious(base, [base, { ...later, workoutId: 'other' }])).toBeUndefined();
+  });
+
+  it('compares against the most recent earlier completed run of the same workout', () => {
+    const aborted: SessionLog = { ...base, id: 'x', endedAt: '2026-09-02T10:00:00.000Z', completed: false, totalReps: 5 };
+    const cmp = compareWithPrevious(later, [later, aborted, base]);
+    expect(cmp?.previous.id).toBe('a'); // the aborted one is skipped
+    expect(cmp?.durationSeconds).toBe(-120);
+    expect(cmp?.totalReps).toBe(12);
+    expect(cmp?.estimatedCalories).toBe(15);
+    expect(cmp?.averageIntensity).toBe(0.25);
+    expect(cmp?.runs).toBe(1);
+  });
+
+  it('ignores logs that ended after the compared log', () => {
+    expect(compareWithPrevious(base, [base, later])).toBeUndefined();
+  });
+});
+
+describe('calorie range', () => {
+  it('brackets the point estimate by ±20 % on a friendly grid', () => {
+    expect(calorieRange(237)).toEqual({ low: 180, high: 290, mid: 237 });
+    expect(calorieRange(42)).toEqual({ low: 30, high: 55, mid: 42 });
+    expect(calorieRange(0)).toEqual({ low: 0, high: 0, mid: 0 });
+    expect(calorieRange(-5)).toEqual({ low: 0, high: 0, mid: 0 });
+  });
+
+  it('formats as a range with an en dash', () => {
+    expect(formatCalorieRange(237)).toBe('180–290');
+    expect(formatCalorieRange(0)).toBe('0');
   });
 });

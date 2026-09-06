@@ -53,6 +53,8 @@ export interface SessionSnapshot {
   readonly totalSteps: number;
   readonly step?: PlanStep;
   readonly intensity: IntensityLevel;
+  /** Rep tempo multiplier (1 = exercise default; 1.3 = 30 % slower). */
+  readonly tempoFactor: number;
   readonly interactionLevel: InteractionLevel;
   /** Prescription for the current step after intensity has been applied. */
   readonly target?: ResolvedPrescription;
@@ -69,6 +71,27 @@ export interface SessionSnapshot {
   readonly startedAt?: number; // epoch ms
   /** Cumulative stats for the metrics engine. */
   readonly stats: SessionStats;
+}
+
+/**
+ * Serialisable checkpoint of a running session, written periodically so a
+ * killed app can offer "Fortsätt passet?". Intentionally coarse: a restored
+ * session resumes at the *start* of the interrupted step.
+ */
+export interface SessionCheckpoint {
+  readonly version: 1;
+  readonly workoutId: string;
+  readonly stepIndex: number;
+  readonly intensity: IntensityLevel;
+  readonly tempoFactor: number;
+  readonly interactionLevel: InteractionLevel;
+  readonly startedAt: number; // epoch ms
+  /** Wall-clock time of the checkpoint. */
+  readonly savedAt: number; // epoch ms
+  /** Session seconds elapsed (excl. pauses) when the checkpoint was written. */
+  readonly elapsedSeconds: number;
+  readonly stats: SessionStats;
+  readonly totalSteps: number;
 }
 
 export interface CompletedSetRecord {
@@ -94,6 +117,12 @@ export interface SessionStats {
 
 export type SessionEvents = {
   started: { plan: SessionPlan };
+  /** A long tick gap (app backgrounded) was skipped instead of caught up. */
+  gapSkipped: { step: PlanStep; seconds: number };
+  /** Session was resumed from a checkpoint (after a crash / app kill). */
+  restored: { step: PlanStep; checkpoint: SessionCheckpoint };
+  /** Rep tempo factor changed (1 = exercise default, >1 slower). */
+  tempoChanged: { from: number; to: number };
   /** New exercise is about to begin – the coach introduces it. */
   exerciseAnnounced: { step: PlanStep; target: ResolvedPrescription; getReadySeconds: number };
   /** Get-ready countdown ticks (3, 2, 1). */

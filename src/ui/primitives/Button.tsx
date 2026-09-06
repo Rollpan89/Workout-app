@@ -35,7 +35,7 @@ const VARIANT_FG: Record<ButtonVariant, string> = {
   secondary: colors.text,
   ghost: colors.textMuted,
   danger: colors.textOnAccent,
-  rest: colors.textOnAccent,
+  rest: onAccent(colors.rest),
 };
 
 const SIZE: Record<ButtonSize, { h: number; px: number; font: 'labelSmall' | 'label' | 'h3' | 'h2' }> = {
@@ -67,7 +67,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={rest.accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={(e) => {

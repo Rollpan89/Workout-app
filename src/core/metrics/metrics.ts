@@ -177,3 +177,75 @@ export function computeStreak(logs: readonly SessionLog[], now: number = Date.no
   }
   return streak;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Comparison with the previous session of the same workout                  */
+/* ------------------------------------------------------------------------ */
+
+export interface LogComparison {
+  /** The log compared against (most recent earlier *completed* run of the same workout). */
+  readonly previous: SessionLog;
+  /** Deltas: positive = more than last time. */
+  readonly durationSeconds: number;
+  readonly totalReps: number;
+  readonly estimatedCalories: number;
+  /** Difference in average intensity (e.g. +0.25). */
+  readonly averageIntensity: number;
+  /** Number of earlier completed runs of this workout. */
+  readonly runs: number;
+}
+
+/**
+ * "Jämfört med förra gången": find the most recent completed log of the same
+ * workout that ended before `log` and return the deltas. Undefined for the
+ * first run of a workout.
+ */
+export function compareWithPrevious(log: SessionLog, history: readonly SessionLog[]): LogComparison | undefined {
+  const earlier = history
+    .filter((l) => l.id !== log.id && l.workoutId === log.workoutId && l.completed && l.endedAt < log.endedAt)
+    .sort((a, b) => b.endedAt.localeCompare(a.endedAt));
+  const previous = earlier[0];
+  if (!previous) return undefined;
+  return {
+    previous,
+    durationSeconds: log.durationSeconds - previous.durationSeconds,
+    totalReps: log.totalReps - previous.totalReps,
+    estimatedCalories: log.estimatedCalories - previous.estimatedCalories,
+    averageIntensity: Math.round((log.averageIntensity - previous.averageIntensity) * 100) / 100,
+    runs: earlier.length,
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Calorie uncertainty                                                        */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * MET-based estimates without heart-rate data are honest to about ±20 %
+ * (individual efficiency, real intensity, EPOC). Rather than print a
+ * falsely precise "237 kcal" the UI shows a rounded range.
+ */
+export const CALORIE_UNCERTAINTY = 0.2;
+
+export interface CalorieRange {
+  readonly low: number;
+  readonly high: number;
+  /** The point estimate the range was derived from. */
+  readonly mid: number;
+}
+
+export function calorieRange(kcal: number, uncertainty: number = CALORIE_UNCERTAINTY): CalorieRange {
+  const mid = Math.max(0, Math.round(kcal));
+  if (mid === 0) return { low: 0, high: 0, mid: 0 };
+  const step = mid >= 100 ? 10 : 5;
+  const low = Math.max(0, Math.floor((mid * (1 - uncertainty)) / step) * step);
+  const high = Math.ceil((mid * (1 + uncertainty)) / step) * step;
+  return { low, high, mid };
+}
+
+/** "180–260" (en dash), or "0" for nothing burned. */
+export function formatCalorieRange(kcal: number): string {
+  const r = calorieRange(kcal);
+  if (r.high === 0) return '0';
+  return `${r.low}–${r.high}`;
+}

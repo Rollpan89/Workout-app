@@ -1,4 +1,5 @@
 import type { AppSettings, CustomWorkoutDraft, Exercise, SessionLog, Workout } from '@/core/domain';
+import type { SessionCheckpoint } from '@/core/engine/types';
 
 /**
  * Repository interfaces – the *only* contract the app layer depends on for
@@ -31,6 +32,10 @@ export interface SessionRepository {
   saveSession(log: SessionLog): Promise<void>;
   deleteSession(id: string): Promise<void>;
   clear(): Promise<void>;
+  /** In-progress session checkpoint ("Fortsätt passet?"). */
+  loadCheckpoint(): Promise<SessionCheckpoint | undefined>;
+  saveCheckpoint(checkpoint: SessionCheckpoint): Promise<void>;
+  clearCheckpoint(): Promise<void>;
 }
 
 export interface SettingsRepository {

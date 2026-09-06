@@ -7,6 +7,7 @@ import {
   type SessionLog,
   type Workout,
 } from '@/core/domain';
+import type { SessionCheckpoint } from '@/core/engine/types';
 
 import type { KeyValueStore } from '../storage/KeyValueStore';
 import type {
@@ -19,6 +20,7 @@ import type {
 
 const KEYS = {
   sessions: 'sessions',
+  checkpoint: 'sessionCheckpoint',
   settings: 'settings',
   customWorkouts: 'customWorkouts',
 } as const;
@@ -76,8 +78,18 @@ export class LocalCustomWorkoutRepository implements CustomWorkoutRepository {
   }
 }
 
+/**
+ * Upper bound on stored logs. A daily athlete fills this in a year; the
+ * oldest logs are dropped first. Keeps the single JSON blob (and every
+ * hydrate) bounded – AsyncStorage on Android caps a value at ~2 MB.
+ */
+export const MAX_STORED_SESSIONS = 365;
+
 export class LocalSessionRepository implements SessionRepository {
-  constructor(private readonly store: KeyValueStore) {}
+  constructor(
+    private readonly store: KeyValueStore,
+    private readonly maxSessions: number = MAX_STORED_SESSIONS,
+  ) {}
 
   async listSessions(): Promise<readonly SessionLog[]> {
     const logs = (await this.store.get<SessionLog[]>(KEYS.sessions)) ?? [];
@@ -86,7 +98,9 @@ export class LocalSessionRepository implements SessionRepository {
 
   async saveSession(log: SessionLog): Promise<void> {
     const logs = (await this.store.get<SessionLog[]>(KEYS.sessions)) ?? [];
-    const next = [log, ...logs.filter((l) => l.id !== log.id)];
+    const next = [log, ...logs.filter((l) => l.id !== log.id)]
+      .sort((a, b) => b.endedAt.localeCompare(a.endedAt))
+      .slice(0, this.maxSessions);
     await this.store.set(KEYS.sessions, next);
   }
 
@@ -100,6 +114,19 @@ export class LocalSessionRepository implements SessionRepository {
 
   async clear(): Promise<void> {
     await this.store.remove(KEYS.sessions);
+  }
+
+  async loadCheckpoint(): Promise<SessionCheckpoint | undefined> {
+    const cp = await this.store.get<SessionCheckpoint>(KEYS.checkpoint);
+    return cp && cp.version === 1 ? cp : undefined;
+  }
+
+  async saveCheckpoint(checkpoint: SessionCheckpoint): Promise<void> {
+    await this.store.set(KEYS.checkpoint, checkpoint);
+  }
+
+  async clearCheckpoint(): Promise<void> {
+    await this.store.remove(KEYS.checkpoint);
   }
 }
 
@@ -124,6 +151,9 @@ export function mergeSettings(stored: Partial<AppSettings> | undefined): AppSett
     ...stored,
     voice: { ...DEFAULT_SETTINGS.voice, ...(stored.voice ?? {}) },
     profile: { ...DEFAULT_SETTINGS.profile, ...(stored.profile ?? {}) },
+    tempoOverrides: { ...(stored.tempoOverrides ?? {}) },
+    // Installations that pre-date the intro have used the app already – don't show it to them.
+    onboardingDone: stored.onboardingDone ?? true,
   };
 }
 

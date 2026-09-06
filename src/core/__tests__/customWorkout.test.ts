@@ -1,8 +1,10 @@
-import { LocalCustomWorkoutRepository } from '../../data/repositories/local';
+import { LocalCustomWorkoutRepository, LocalSessionRepository } from '../../data/repositories/local';
 import { MemoryStore } from '../../data/storage/KeyValueStore';
 import {
   compileDraft,
   createEmptyDraft,
+  DRAFT_LIMITS,
+  draftRounds,
   defaultDraftExercise,
   draftFromWorkout,
   estimateDraftMinutes,
@@ -10,7 +12,7 @@ import {
   validateDraft,
   type CustomWorkoutDraft,
 } from '../domain/customWorkout';
-import { lz, type Exercise, type Workout, type WorkoutBlock } from '../domain';
+import { lz, type Exercise, type SessionLog, type Workout, type WorkoutBlock } from '../domain';
 import { buildSessionPlan } from '../engine/planner';
 import { EX_PLANK, EX_SQUAT, lookup, WORKOUT } from '../testing/fixtures';
 
@@ -118,7 +120,15 @@ describe('custom workout drafts', () => {
     expect(estimateDraftMinutes(draft, find)).toBe(Math.round((110 + 30 + 65) / 60)); // ≈ 3
   });
 
-  it('copies a built-in workout, expanding rounds into a flat list', () => {
+  it('copies a multi-block workout, expanding rounds into a flat list', () => {
+    const warmup: WorkoutBlock = {
+      id: 'wu',
+      title: lz('Uppvärmning', 'Warm-up'),
+      kind: 'warmup',
+      restSeconds: 0,
+      transitionSeconds: 5,
+      exercises: [{ exerciseId: 'plank', sets: 1, prescription: { kind: 'time', seconds: 20 } }],
+    };
     const circuit: WorkoutBlock = {
       id: 'circuit',
       title: lz('Cirkel', 'Circuit'),
@@ -131,7 +141,7 @@ describe('custom workout drafts', () => {
         { exerciseId: 'plank', sets: 1, prescription: { kind: 'time', seconds: 30 }, restSeconds: 5 },
       ],
     };
-    const source: Workout = { ...WORKOUT, id: 'src', blocks: [circuit], accent: 'red' };
+    const source: Workout = { ...WORKOUT, id: 'src', blocks: [warmup, circuit], accent: 'red' };
     const draft = draftFromWorkout(source, 'cw5', 'Test (kopia)', 'magenta', NOW);
 
     expect(draft.sourceId).toBe('src');
@@ -139,9 +149,10 @@ describe('custom workout drafts', () => {
     expect(draft.accent).toBe('magenta');
     expect(draft.goal).toBe(source.goal);
     expect(draft.transitionSeconds).toBe(10);
-    expect(draft.exercises.map((e) => e.exerciseId)).toEqual(['squat', 'plank', 'squat', 'plank']);
-    expect(draft.exercises[0]?.restSeconds).toBe(15); // block default
-    expect(draft.exercises[1]?.restSeconds).toBe(5); // per-exercise override
+    expect(draft.rounds).toBeUndefined();
+    expect(draft.exercises.map((e) => e.exerciseId)).toEqual(['plank', 'squat', 'plank', 'squat', 'plank']);
+    expect(draft.exercises[1]?.restSeconds).toBe(15); // block default
+    expect(draft.exercises[2]?.restSeconds).toBe(5); // per-exercise override
 
     // Round-trips to a runnable workout with the same amount of work
     const compiled = compileDraft(draft, find);
@@ -165,5 +176,99 @@ describe('LocalCustomWorkoutRepository', () => {
     await repo.deleteDraft('b');
     expect((await repo.listDrafts()).map((d) => d.id)).toEqual(['a']);
     expect(await repo.getDraft('b')).toBeUndefined();
+  });
+});
+
+describe('draft rounds (circuits)', () => {
+  it('compiles rounds into a circuit block the planner repeats', () => {
+    const draft = {
+      ...createEmptyDraft('cw9', 'red', NOW),
+      name: 'Cirkel',
+      rounds: 3,
+      exercises: [
+        { exerciseId: 'squat', sets: 1, prescription: { kind: 'reps' as const, reps: 10 }, restSeconds: 10 },
+        { exerciseId: 'plank', sets: 1, prescription: { kind: 'time' as const, seconds: 20 }, restSeconds: 10 },
+      ],
+    };
+    const compiled = compileDraft(draft, find);
+    expect(compiled.blocks[0]?.rounds).toBe(3);
+    const steps = buildSessionPlan(compiled, find).steps;
+    expect(steps).toHaveLength(6);
+    expect(steps.map((s) => s.round)).toEqual([1, 1, 2, 2, 3, 3]);
+    // the estimate scales with the rounds
+    expect(estimateDraftMinutes(draft, find)).toBeGreaterThan(estimateDraftMinutes({ ...draft, rounds: 1 }, find));
+  });
+
+  it('treats missing or absurd rounds as 1 / clamps to the limit', () => {
+    expect(draftRounds({})).toBe(1);
+    expect(draftRounds({ rounds: 0 })).toBe(1);
+    expect(draftRounds({ rounds: 99 })).toBe(DRAFT_LIMITS.rounds.max);
+    expect(draftRounds({ rounds: Number.NaN })).toBe(1);
+    const compiled = compileDraft({ ...createEmptyDraft('cw10', 'red', NOW), name: 'x', exercises: [{ exerciseId: 'squat', sets: 1, prescription: { kind: 'reps', reps: 5 }, restSeconds: 0 }] }, find);
+    expect(compiled.blocks[0]?.rounds).toBeUndefined();
+  });
+
+  it('keeps the rounds of a single-circuit source when copying instead of flattening it', () => {
+    const circuit: WorkoutBlock = {
+      id: 'circuit',
+      title: lz('Cirkel', 'Circuit'),
+      kind: 'main',
+      restSeconds: 15,
+      transitionSeconds: 10,
+      rounds: 3,
+      exercises: [{ exerciseId: 'squat', sets: 1, prescription: { kind: 'reps', reps: 12 } }],
+    };
+    const source: Workout = { ...WORKOUT, id: 'src2', blocks: [circuit], accent: 'red' };
+    const draft = draftFromWorkout(source, 'cw11', 'Kopia', 'lime', NOW);
+    expect(draft.rounds).toBe(3);
+    expect(draft.exercises).toHaveLength(1); // not 3 – the rounds live on the draft
+    expect(buildSessionPlan(compileDraft(draft, find), find).steps).toHaveLength(3);
+  });
+});
+
+describe('LocalSessionRepository', () => {
+  const log = (i: number): SessionLog => ({
+    id: `log-${i}`,
+    workoutId: 'w',
+    startedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+    endedAt: new Date(Date.UTC(2026, 0, 1, 0, 30, i)).toISOString(),
+    durationSeconds: 1800,
+    workSeconds: 1200,
+    completed: true,
+    averageIntensity: 1,
+    totalReps: 10,
+    totalSets: 2,
+    estimatedCalories: 100,
+    muscleImpact: {},
+  });
+
+  it('keeps at most `maxSessions` logs, dropping the oldest, and survives a checkpoint round-trip', async () => {
+    const repo = new LocalSessionRepository(new MemoryStore(), 3);
+    for (let i = 0; i < 5; i++) await repo.saveSession(log(i));
+    const kept = await repo.listSessions();
+    expect(kept.map((l) => l.id)).toEqual(['log-4', 'log-3', 'log-2']);
+
+    // re-saving an existing id replaces instead of duplicating
+    await repo.saveSession({ ...log(4), totalReps: 99 });
+    expect((await repo.listSessions()).map((l) => l.id)).toEqual(['log-4', 'log-3', 'log-2']);
+    expect((await repo.listSessions())[0]?.totalReps).toBe(99);
+
+    expect(await repo.loadCheckpoint()).toBeUndefined();
+    await repo.saveCheckpoint({
+      version: 1,
+      workoutId: 'w',
+      stepIndex: 2,
+      intensity: 1,
+      tempoFactor: 1,
+      interactionLevel: 'handsFree',
+      startedAt: 1,
+      savedAt: 2,
+      elapsedSeconds: 1,
+      stats: { completedSets: [], workSeconds: 0, restSeconds: 0, pausedSeconds: 0, intensitySecondsSum: 0 },
+      totalSteps: 5,
+    });
+    expect((await repo.loadCheckpoint())?.stepIndex).toBe(2);
+    await repo.clearCheckpoint();
+    expect(await repo.loadCheckpoint()).toBeUndefined();
   });
 });

@@ -30,6 +30,11 @@ export interface CustomWorkoutDraft {
   readonly exercises: readonly DraftExercise[];
   /** Rest between exercises (transition) in seconds. */
   readonly transitionSeconds: number;
+  /**
+   * Run the whole list this many times (circuit style). Optional for
+   * backwards compatibility with stored drafts; treated as 1 when absent.
+   */
+  readonly rounds?: number;
   readonly createdAt: string;
   readonly updatedAt: string;
   /** Id of the built-in workout this was copied from, if any. */
@@ -44,7 +49,15 @@ export const DRAFT_LIMITS = {
   rest: { min: 0, max: 300 },
   transition: { min: 0, max: 120 },
   exercises: { min: 1, max: 30 },
+  rounds: { min: 1, max: 10 },
 } as const;
+
+/** Effective number of rounds of a draft (1 when unset or invalid). */
+export function draftRounds(draft: Pick<CustomWorkoutDraft, 'rounds'>): number {
+  const r = draft.rounds ?? 1;
+  if (!Number.isFinite(r)) return 1;
+  return Math.min(DRAFT_LIMITS.rounds.max, Math.max(DRAFT_LIMITS.rounds.min, Math.round(r)));
+}
 
 export type DraftValidationError = 'nameRequired' | 'noExercises' | 'tooManyExercises';
 
@@ -122,8 +135,11 @@ export function draftFromWorkout(
 ): CustomWorkoutDraft {
   const exercises: DraftExercise[] = [];
   let transition = 20;
+  // A single circuit block keeps its rounds as a draft-level setting;
+  // anything more complex is flattened so the simple list stays truthful.
+  const keepRounds = source.blocks.length === 1 && (source.blocks[0]?.rounds ?? 1) > 1;
   for (const block of source.blocks) {
-    const rounds = Math.max(1, block.rounds ?? 1);
+    const rounds = keepRounds ? 1 : Math.max(1, block.rounds ?? 1);
     transition = block.kind === 'main' ? block.transitionSeconds : transition;
     for (let r = 0; r < rounds; r += 1) {
       for (const we of block.exercises) {
@@ -144,6 +160,7 @@ export function draftFromWorkout(
     accent,
     exercises,
     transitionSeconds: transition,
+    ...(keepRounds ? { rounds: source.blocks[0]?.rounds } : {}),
     createdAt: now,
     updatedAt: now,
     sourceId: source.id,
@@ -160,13 +177,15 @@ export function compileDraft(draft: CustomWorkoutDraft, lookup: (id: string) => 
     restSeconds: e.restSeconds,
   }));
 
+  const rounds = draftRounds(draft);
   const block: WorkoutBlock = {
     id: `${draft.id}-main`,
-    title: lz('Ditt pass', 'Your workout'),
+    title: rounds > 1 ? lz('Cirkel', 'Circuit') : lz('Ditt pass', 'Your workout'),
     kind: 'main',
     exercises,
     restSeconds: 60,
     transitionSeconds: draft.transitionSeconds,
+    ...(rounds > 1 ? { rounds } : {}),
   };
 
   const equipment = new Set<Exercise['equipment'][number]>();
@@ -214,5 +233,7 @@ export function estimateDraftMinutes(draft: CustomWorkoutDraft, lookup: (id: str
     seconds += Math.max(0, e.sets - 1) * e.restSeconds;
     if (i < draft.exercises.length - 1) seconds += draft.transitionSeconds;
   });
+  const rounds = draftRounds(draft);
+  seconds = seconds * rounds + Math.max(0, rounds - 1) * draft.transitionSeconds;
   return Math.max(1, Math.round(seconds / 60));
 }

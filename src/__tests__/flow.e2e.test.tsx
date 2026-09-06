@@ -5,6 +5,7 @@
  *
  * Only the platform edges (TTS, haptics, AsyncStorage, fonts) are mocked.
  */
+import { createAudioPlayer } from 'expo-audio';
 import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as Speech from 'expo-speech';
@@ -12,8 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
 import { getWorkout } from '@/content';
-import type { Workout } from '@/core/domain';
+import type { SessionLog, Workout } from '@/core/domain';
 import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
+import { getRepositories } from '@/data';
 import { useHistoryStore } from '@/state/historyStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
@@ -26,6 +28,7 @@ import Settings from '../../app/(tabs)/settings';
 import Session from '../../app/session';
 import Summary from '../../app/summary';
 import WorkoutBuilder from '../../app/builder/[id]';
+import SessionDetail from '../../app/history/[id]';
 import WorkoutDetail from '../../app/workout/[id]';
 
 jest.mock('expo-font', () => ({
@@ -47,6 +50,7 @@ const routes = {
   '(tabs)/settings': Settings,
   'workout/[id]': WorkoutDetail,
   'builder/[id]': WorkoutBuilder,
+  'history/[id]': SessionDetail,
   session: Session,
   summary: Summary,
 };
@@ -115,6 +119,19 @@ describe('PulseCoach – core flow', () => {
     fireEvent.press(screen.getByTestId('primary-resume'));
     expect(useSessionStore.getState().snapshot?.phase).toBe('working');
 
+    // Blind pause: a single tap on the display does nothing, a double-tap pauses,
+    // another double-tap resumes (fake timers → Date.now() is frozen, so both taps fall within the window)
+    fireEvent.press(screen.getByTestId('phase-display'));
+    expect(useSessionStore.getState().snapshot?.phase).toBe('working');
+    jest.advanceTimersByTime(1_000);
+    fireEvent.press(screen.getByTestId('phase-display'));
+    fireEvent.press(screen.getByTestId('phase-display'));
+    expect(useSessionStore.getState().snapshot?.phase).toBe('paused');
+    jest.advanceTimersByTime(1_000);
+    fireEvent.press(screen.getByTestId('phase-display'));
+    fireEvent.press(screen.getByTestId('phase-display'));
+    expect(useSessionStore.getState().snapshot?.phase).toBe('working');
+
     // Fast-forward through the rest of the programme using skip (deterministic)
     let guard = 0;
     while (useSessionStore.getState().snapshot?.phase !== 'finished' && guard < 60) {
@@ -134,6 +151,9 @@ describe('PulseCoach – core flow', () => {
     expect(result?.completed).toBe(true);
     expect(result?.workoutId).toBe('core-crusher');
     expect(result?.estimatedCalories).toBeGreaterThanOrEqual(0);
+    // Calories are shown as an honest range, never a single exact number
+    expect(screen.getByTestId('summary-calories')).toHaveTextContent(/^(0|\d+–\d+)$/);
+    expect(screen.getByText(/Uppskattning/)).toBeTruthy();
     await waitFor(() => expect(useHistoryStore.getState().logs).toHaveLength(1));
 
     // Back to library, then history shows the session
@@ -191,6 +211,67 @@ describe('PulseCoach – core flow', () => {
     await waitFor(() => expect(screen.queryByTestId('exercise-sheet')).toBeNull());
   });
 
+  it('searches the library by workout title and by exercise name', async () => {
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('library-search')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('onboarding-skip'));
+    expect(screen.getByText('Core Crusher')).toBeTruthy();
+
+    fireEvent.changeText(screen.getByTestId('library-search'), 'core');
+    expect(screen.getByText('Core Crusher')).toBeTruthy();
+    expect(screen.queryByText('Lower Power')).toBeNull();
+
+    // an exercise name finds every workout containing it
+    fireEvent.changeText(screen.getByTestId('library-search'), 'planka');
+    expect(screen.getByText('Core Crusher')).toBeTruthy();
+    expect(screen.getByText('Full Body Blast')).toBeTruthy();
+
+    fireEvent.changeText(screen.getByTestId('library-search'), 'zzzz');
+    expect(screen.getByTestId('library-empty')).toHaveTextContent(/Inget pass matchar "zzzz"/);
+
+    fireEvent.changeText(screen.getByTestId('library-search'), '');
+    expect(screen.getByText('Lower Power')).toBeTruthy();
+  });
+
+  it('shows the three-step intro on first run only', async () => {
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('onboarding')).toBeTruthy());
+    expect(screen.getByText('Din coach i örat')).toBeTruthy();
+
+    // Step 1: name → Step 2: interaction level → Step 3: tips → done
+    fireEvent.changeText(screen.getByTestId('onboarding-name'), 'Rollo');
+    fireEvent.press(screen.getByTestId('onboarding-next'));
+    expect(screen.getByText('Hur mycket vill du styra?')).toBeTruthy();
+    fireEvent.press(screen.getByText('Assisterad'));
+    fireEvent.press(screen.getByTestId('onboarding-next'));
+    expect(screen.getByText('Tre saker att veta')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('onboarding-next'));
+    await waitFor(() => expect(screen.queryByTestId('onboarding')).toBeNull());
+
+    const settings = useSettingsStore.getState().settings;
+    expect(settings.onboardingDone).toBe(true);
+    expect(settings.profile.displayName).toBe('Rollo');
+    expect(settings.interactionLevel).toBe('assisted');
+    const stored = await getRepositories().settings.load();
+    expect(stored.onboardingDone).toBe(true);
+
+    // Existing installations (settings saved before the intro existed) never see it
+    await AsyncStorage.clear();
+    await getRepositories().settings.save({ ...settings, onboardingDone: undefined as unknown as boolean });
+    const migrated = await getRepositories().settings.load();
+    expect(migrated.onboardingDone).toBe(true);
+  });
+
+  it('keeps crash reporting opt-in (off by default) and persists the choice', async () => {
+    renderRouter(routes, { initialUrl: '/settings' });
+    await waitFor(() => expect(screen.getByTestId('toggle-crash-reports')).toBeTruthy());
+    expect(useSettingsStore.getState().settings.crashReports).toBe(false);
+    fireEvent(screen.getByTestId('toggle-crash-reports'), 'valueChange', true);
+    expect(useSettingsStore.getState().settings.crashReports).toBe(true);
+    const stored = await getRepositories().settings.load();
+    expect(stored.crashReports).toBe(true);
+  });
+
   it('persists locale + interaction level from settings', async () => {
     renderRouter(routes, { initialUrl: '/settings' });
     await waitFor(() => expect(screen.getByText('Engelska')).toBeTruthy());
@@ -241,6 +322,188 @@ describe('PulseCoach – core flow', () => {
     expect(options.rate as number).toBeGreaterThan(1.1);
     expect(options.pitch as number).toBeGreaterThan(1.1);
   });
+
+  it('lets the user pick a count tempo before the start and nudge it mid-set, remembered per exercise', async () => {
+    renderRouter(routes, { initialUrl: '/workout/full-body-blast' });
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+
+    // Tempo chips: pick "Lugnt" (1.3×) before starting
+    expect(screen.getByText('Räknetempo')).toBeTruthy();
+    fireEvent.press(screen.getByText('Lugnt'));
+    fireEvent.press(screen.getByTestId('start-workout'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    expect(useSettingsStore.getState().settings.tempoPreset).toBe('calm'); // remembered as default
+
+    // Steps 1–3 are timed (no tempo control); skip to the squats (10 reps @ 3 s)
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        useSessionStore.getState().skipStep();
+      });
+      await advance(200);
+    }
+    await advance(5_500); // get-ready countdown
+    const snap = useSessionStore.getState().snapshot;
+    expect(snap?.phase).toBe('working');
+    expect(snap?.step?.exercise.id).toBe('squat');
+    expect(snap?.tempoFactor).toBe(1.3);
+    expect(screen.getByTestId('tempo-value')).toHaveTextContent(/1\.3×/);
+
+    // Slower: 1.3 → 1.4, spoken, and learned for the squat
+    (Speech.speak as jest.Mock).mockClear();
+    fireEvent.press(screen.getByTestId('tempo-slower'));
+    expect(useSessionStore.getState().snapshot?.tempoFactor).toBe(1.4);
+    expect(useSettingsStore.getState().settings.tempoOverrides.squat).toBe(1.4);
+    const spoken = (Speech.speak as jest.Mock).mock.calls.map((c) => c[0] as string);
+    expect(spoken).toContain('Lugnare tempo.');
+
+    // The chosen tempo is persisted so the next session starts from it
+    const stored = await getRepositories().settings.load();
+    expect(stored.tempoOverrides.squat).toBe(1.4);
+    expect(stored.tempoPreset).toBe('calm');
+  }, 30_000);
+
+  it('offers to continue an interrupted session after a restart and picks up at the same step', async () => {
+    const { unmount } = renderRouter(routes, { initialUrl: '/workout/core-crusher' });
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('start-workout'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+
+    // Progress to step 3, then "crash": unmount without reset (state lost, storage kept)
+    for (let i = 0; i < 2; i++) {
+      await act(async () => {
+        useSessionStore.getState().skipStep();
+      });
+      await advance(200);
+    }
+    await advance(600);
+    expect(useSessionStore.getState().snapshot?.stepIndex).toBe(2);
+    const stored = await getRepositories().sessions.loadCheckpoint();
+    expect(stored?.workoutId).toBe('core-crusher');
+    expect(stored?.stepIndex).toBe(2);
+    unmount();
+    useSessionStore.setState({ plan: undefined, snapshot: undefined, result: undefined, pendingCheckpoint: undefined });
+    (Speech.speak as jest.Mock).mockClear();
+
+    // Fresh start: the library offers to resume
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('resume-banner')).toBeTruthy());
+    expect(screen.getByText(/Core Crusher – du var på steg 3 av/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('resume-session'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    const snap = useSessionStore.getState().snapshot;
+    expect(snap?.stepIndex).toBe(2);
+    expect(snap?.phase).toBe('announcing');
+    await waitFor(() => expect(Speech.speak).toHaveBeenCalled());
+    const firstLine = (Speech.speak as jest.Mock).mock.calls[0]?.[0] as string;
+    expect(firstLine).toMatch(/^Välkommen tillbaka\. Vi fortsätter med steg 3 av \d+\./);
+    // the banner is gone and the checkpoint keeps being refreshed
+    expect(useSessionStore.getState().pendingCheckpoint).toBeUndefined();
+
+    // Discarding clears storage
+    await act(async () => {
+      useSessionStore.getState().stop();
+    });
+    await waitFor(async () => expect(await getRepositories().sessions.loadCheckpoint()).toBeUndefined());
+  }, 30_000);
+
+  it('keeps counting from the audio keep-alive when JS timers are frozen (Android, screen locked)', async () => {
+    renderRouter(routes, { initialUrl: '/workout/core-crusher' });
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('start-workout'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    expect(useSessionStore.getState().snapshot?.phase).toBe('announcing');
+
+    // The session subscribed to the silent keep-alive player's status events
+    await waitFor(() => expect(createAudioPlayer).toHaveBeenCalled());
+    const player = (createAudioPlayer as jest.Mock).mock.results.at(-1)?.value as { addListener: jest.Mock };
+    expect(player.addListener).toHaveBeenCalledWith('playbackStatusUpdate', expect.any(Function));
+    const onStatus = player.addListener.mock.calls[0][1] as () => void;
+
+    // Screen locked on Android: the wall clock moves on but no JS timer fires …
+    jest.setSystemTime(Date.now() + 6_000);
+    expect(useSessionStore.getState().snapshot?.phase).toBe('announcing');
+
+    // … until the next native status event, which drives the engine forward.
+    await act(async () => onStatus());
+    expect(useSessionStore.getState().snapshot?.phase).toBe('working');
+
+    // After the session is over the subscription is released.
+    await act(async () => {
+      useSessionStore.getState().stop();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(4_500);
+    });
+    const subscription = player.addListener.mock.results[0]?.value as { remove: jest.Mock };
+    expect(subscription.remove).toHaveBeenCalled();
+  });
+
+  it('compares a session with the previous run, opens a log in detail and deletes it', async () => {
+    // Seed an earlier completed Core Crusher run
+    const earlier: SessionLog = {
+      id: 'log-earlier',
+      workoutId: 'core-crusher',
+      startedAt: '2026-09-01T10:00:00.000Z',
+      endedAt: '2026-09-01T10:20:00.000Z',
+      durationSeconds: 1200,
+      workSeconds: 900,
+      completed: true,
+      averageIntensity: 1,
+      totalReps: 40,
+      totalSets: 6,
+      estimatedCalories: 120,
+      muscleImpact: { core: 1 },
+    };
+    await getRepositories().sessions.saveSession(earlier);
+
+    renderRouter(routes, { initialUrl: '/workout/core-crusher' });
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('start-workout'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    let guard = 0;
+    while (useSessionStore.getState().snapshot?.phase !== 'finished' && guard < 60) {
+      await act(async () => {
+        useSessionStore.getState().skipStep();
+      });
+      await advance(200);
+      guard++;
+    }
+
+    // Summary shows the comparison with the seeded run
+    await waitFor(() => expect(screen.getByTestId('summary-heading')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('comparison-row')).toBeTruthy());
+    expect(screen.getByText(/Jämfört med förra gången/)).toBeTruthy();
+    await waitFor(() => expect(useHistoryStore.getState().logs).toHaveLength(2));
+    const latest = useHistoryStore.getState().logs[0]!;
+    expect(latest.id).not.toBe('log-earlier');
+
+    // History → open the latest log
+    fireEvent.press(screen.getByTestId('summary-done'));
+    await waitFor(() => expect(screen.getByText(/Välj ditt pass/i)).toBeTruthy());
+    fireEvent.press(screen.getByText('Historik'));
+    await waitFor(() => expect(screen.getByTestId(`log-${latest.id}`)).toBeTruthy());
+    fireEvent.press(screen.getByTestId(`log-${latest.id}`));
+    await waitFor(() => expect(screen.getByTestId('detail-heading')).toBeTruthy());
+    expect(screen.getByTestId('detail-heading')).toHaveTextContent('Core Crusher');
+    expect(screen.getByTestId('comparison-row')).toBeTruthy();
+
+    // Delete just this log (native → Alert; press the destructive button)
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      const destructive = buttons?.find((b) => b.style === 'destructive');
+      destructive?.onPress?.();
+    });
+    fireEvent.press(screen.getByTestId('detail-delete'));
+    alertSpy.mockRestore();
+    await waitFor(() => expect(useHistoryStore.getState().logs).toHaveLength(1));
+    expect(useHistoryStore.getState().logs[0]?.id).toBe('log-earlier');
+    const stored = await getRepositories().sessions.listSessions();
+    expect(stored.map((l) => l.id)).toEqual(['log-earlier']);
+
+    // The earlier run has no predecessor → detail says so
+    await waitFor(() => expect(screen.getByTestId('log-log-earlier')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('log-log-earlier'));
+    await waitFor(() => expect(screen.getByText(/Första gången du körde det här passet/)).toBeTruthy());
+  }, 30_000);
 
   it('runs an assisted session in English: waits for a tap before every set', async () => {
     // Render first: renderRouter (re)installs fake timers and the root layout
@@ -306,6 +569,8 @@ describe('PulseCoach – custom workouts', () => {
 
     fireEvent.press(screen.getByTestId('builder-add-exercise'));
     await waitFor(() => expect(screen.getByTestId('exercise-picker')).toBeTruthy());
+    // (the picker is a virtualised FlatList – search brings the plank into the rendered window)
+    fireEvent.changeText(screen.getByTestId('picker-search'), 'plank');
     fireEvent.press(screen.getByTestId('pick-plank'));
     await waitFor(() => expect(screen.getByTestId('draft-row-1')).toBeTruthy());
 
@@ -324,6 +589,9 @@ describe('PulseCoach – custom workouts', () => {
     fireEvent.press(screen.getByTestId('draft-row-1-up'));
     expect(within(screen.getByTestId('draft-row-0')).getByText('Planka')).toBeTruthy();
 
+    // Circuit: run the list 2 rounds
+    fireEvent.press(screen.getByTestId('builder-rounds-2'));
+
     // Save → lands on the detail page of the new workout
     fireEvent.press(screen.getByTestId('builder-save'));
     await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
@@ -331,6 +599,7 @@ describe('PulseCoach – custom workouts', () => {
     expect(screen.getByTestId('edit-workout')).toBeTruthy();
     const saved = useCustomWorkoutStore.getState().workouts[0];
     expect(saved?.custom).toBe(true);
+    expect(saved?.blocks[0]?.rounds).toBe(2);
     expect(saved?.blocks[0]?.exercises.map((e) => e.exerciseId)).toEqual(['plank', 'squat']);
     expect(saved?.blocks[0]?.exercises[1]).toMatchObject({ sets: 4, prescription: { kind: 'reps', reps: 12 }, restSeconds: 50 });
 
@@ -343,9 +612,10 @@ describe('PulseCoach – custom workouts', () => {
     fireEvent.press(screen.getByTestId('start-workout'));
     await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
     expect(useSessionStore.getState().snapshot?.step?.exercise.id).toBe('plank');
-    expect(useSessionStore.getState().snapshot?.totalSteps).toBe(7);
+    expect(useSessionStore.getState().snapshot?.totalSteps).toBe(14); // (3 plank + 4 squat) × 2 varv
+    expect(useSessionStore.getState().snapshot?.step?.rounds).toBe(2);
     let guard = 0;
-    while (useSessionStore.getState().snapshot?.phase !== 'finished' && guard < 20) {
+    while (useSessionStore.getState().snapshot?.phase !== 'finished' && guard < 40) {
       await act(async () => {
         useSessionStore.getState().skipStep();
       });

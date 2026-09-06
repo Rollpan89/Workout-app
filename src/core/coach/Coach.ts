@@ -66,6 +66,7 @@ export class Coach {
   private pendingTempo?: { word: string; dueAt: number; stepIndex: number };
   /** Greeting waiting to be merged into the first exercise announcement. */
   private pendingGreeting?: string;
+  private resumedAt: number | undefined;
   /** Tips for the upcoming exercise, scheduled at specific rest-seconds-remaining marks. */
   private restTips: { at: number; text: string }[] = [];
   /** Exercise id that was already introduced right before the current rest (skip re-announce). */
@@ -95,6 +96,12 @@ export class Coach {
         this.pendingGreeting = this.script.greeting(this.userName, resolveLocalized(plan.workout.title, this.locale));
       }),
 
+      events.on('restored', ({ step }) => {
+        // Replaces the normal greeting: "Välkommen tillbaka. Vi fortsätter med steg 5 av 12."
+        this.pendingGreeting = this.script.welcomeBack(step.index + 1, this.planSteps.length);
+        this.resumedAt = step.index;
+      }),
+
       events.on('exerciseAnnounced', ({ step, target }) => {
         const name = this.exerciseName(step);
         const targetText =
@@ -102,7 +109,10 @@ export class Coach {
             ? this.script.repsTarget(target.reps)
             : this.script.timeTarget(target.seconds);
 
-        const prev = this.planSteps[step.index - 1];
+        // After a restore we re-enter mid-plan: the greeting says where we
+        // are, so skip the block/round intro that belongs to the step before.
+        const prev = this.resumedAt === step.index ? undefined : this.planSteps[step.index - 1];
+        this.resumedAt = undefined;
         const isNewBlock = prev !== undefined && prev.block.id !== step.block.id;
         const isNewRound = prev !== undefined && prev.block.id === step.block.id && prev.round !== step.round;
 
@@ -310,7 +320,28 @@ export class Coach {
       }),
 
       events.on('resumed', () => {
-        this.say(this.script.resumed, 'interrupt');
+        const snap = engine.snapshot;
+        const step = snap.step;
+        if (snap.phase === 'working' && snap.target?.kind === 'reps' && step && snap.repsDone > 0) {
+          // Tell the user where we are so they can pick the count back up.
+          this.say(this.script.resumeAt(step.setNumber, step.totalSets, snap.repsDone + 1, snap.target.reps), 'interrupt');
+        } else {
+          this.say(this.script.resumed, 'interrupt');
+        }
+      }),
+
+      events.on('gapSkipped', () => {
+        const snap = engine.snapshot;
+        const step = snap.step;
+        if (snap.target?.kind === 'reps' && step) {
+          this.say(this.script.resumeAt(step.setNumber, step.totalSets, snap.repsDone + 1, snap.target.reps), 'interrupt');
+        }
+      }),
+
+      events.on('tempoChanged', ({ from, to }) => {
+        // Short confirmation, spoken right away (a queued line would land
+        // several reps late behind the count).
+        this.say(to > from ? this.script.tempoSlower : this.script.tempoFaster, 'interrupt');
       }),
 
       events.on('finished', ({ completed }) => {
@@ -399,7 +430,11 @@ export class Coach {
     for (const cue of next.exercise.instructions?.coachCues ?? []) push(resolveLocalized(cue, this.locale));
     if (pool.length === 0) return;
 
-    const count = this.voice.restTips === 'full' ? Math.min(3, pool.length) : 1;
+    // 'full' = up to three tips, but only when there is room to listen:
+    // three lines in a 20 s rest (plus "Nästa:", "Vila", "Gör dig redo" and
+    // the countdown) is a wall of talk, so short rests degrade to two/one.
+    const maxTips = restSeconds >= 45 ? 3 : restSeconds >= 20 ? 2 : 1;
+    const count = this.voice.restTips === 'full' ? Math.min(maxTips, pool.length) : 1;
     // First tip after the announcements have had time to play; the rest spread
     // evenly, always leaving the last 5 s for "Gör dig redo" + countdown.
     const first = Math.max(5, restSeconds - Math.min(6, Math.floor(restSeconds / 3)));

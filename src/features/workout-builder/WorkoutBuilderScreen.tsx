@@ -8,6 +8,7 @@ import {
   clamp,
   defaultDraftExercise,
   DRAFT_LIMITS,
+  draftRounds,
   estimateDraftMinutes,
   validateDraft,
   WORKOUT_ACCENTS,
@@ -242,6 +243,23 @@ export function WorkoutBuilderScreen() {
         testID="builder-add-exercise"
       />
 
+      <SectionTitle title={t.builder.rounds} color={tone.main} />
+      <View style={styles.transitionRow}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <Chip
+            key={n}
+            label={n === 1 ? t.builder.roundsOne : f(t.builder.roundsN, { n })}
+            selected={draftRounds(draft) === n}
+            color={tone.main}
+            onPress={() => update({ rounds: n })}
+            testID={`builder-rounds-${n}`}
+          />
+        ))}
+      </View>
+      <Text variant="bodySmall" color={colors.textMuted} style={styles.hint}>
+        {t.builder.roundsHint}
+      </Text>
+
       <SectionTitle title={t.builder.transition} color={tone.main} />
       <View style={styles.transitionRow}>
         {[0, 10, 20, 30, 45, 60].map((s) => (
@@ -301,6 +319,7 @@ const styles = StyleSheet.create({
   emptyCard: { marginBottom: spacing.md },
   cardError: { borderWidth: 1, borderColor: colors.red },
   transitionRow: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
+  hint: { marginTop: spacing.sm },
   errors: { marginTop: spacing.lg, gap: 4 },
   footer: { marginTop: spacing.xl },
 });

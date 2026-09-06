@@ -108,12 +108,6 @@ export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardP
 
 const styles = StyleSheet.create({
   card: { marginBottom: spacing.md },
-   linearGradient: {
-    flex: 1,
-    paddingLeft: 15,
-    paddingRight: 15,
-    borderRadius: 5,
-  },
   wash: {
     position: 'absolute',
     right: -105,

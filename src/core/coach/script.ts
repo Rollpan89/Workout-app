@@ -9,6 +9,8 @@ import type { IntensityLabelKey } from '../intensity/intensity';
 export interface CoachScript {
   readonly numbers: readonly string[]; // index 0..N
   readonly greeting: (name: string | undefined, workout: string) => string;
+  /** Session resumed after the app was killed: "Välkommen tillbaka…" */
+  readonly welcomeBack: (step: number, totalSteps: number) => string;
   readonly getReady: (exercise: string, target: string) => string;
   readonly nextUp: (exercise: string) => string;
   readonly repsTarget: (reps: number) => string;
@@ -28,6 +30,11 @@ export interface CoachScript {
   readonly tapWhenReady: string;
   readonly paused: string;
   readonly resumed: string;
+  /** After a pause/background gap: "Vi fortsätter. Set 2, rep 5 av 12." */
+  readonly resumeAt: (set: number, totalSets: number, rep: number, totalReps: number) => string;
+  /** Tempo changed by the user: slower / faster. */
+  readonly tempoSlower: string;
+  readonly tempoFaster: string;
   readonly intensity: (label: IntensityLabelKey) => string;
   readonly intensityUpReps: (reps: number) => string;
   readonly intensityDownReps: (reps: number) => string;
@@ -88,6 +95,7 @@ const sv: CoachScript = {
   numbers: NUMBERS_SV,
   greeting: (name, workout) =>
     name ? `Hej ${name}! Dags för ${workout}. Jag räknar, du kör.` : `Dags för ${workout}. Jag räknar, du kör.`,
+  welcomeBack: (step, total) => `Välkommen tillbaka. Vi fortsätter med steg ${step} av ${total}.`,
   getReady: (exercise, target) => `Nästa: ${exercise}. ${target}. Gör dig redo.`,
   nextUp: (exercise) => `Nästa övning: ${exercise}.`,
   repsTarget: (reps) => `${reps} repetitioner`,
@@ -107,6 +115,10 @@ const sv: CoachScript = {
   tapWhenReady: 'Tryck när du är redo.',
   paused: 'Pausat.',
   resumed: 'Vi fortsätter.',
+  resumeAt: (set, totalSets, rep, totalReps) =>
+    totalSets > 1 ? `Vi fortsätter. Set ${set} av ${totalSets}, rep ${rep} av ${totalReps}.` : `Vi fortsätter. Rep ${rep} av ${totalReps}.`,
+  tempoSlower: 'Lugnare tempo.',
+  tempoFaster: 'Snabbare tempo.',
   intensity: (label) => `Intensitet: ${SV_LABELS[label]}.`,
   intensityUpReps: (reps) => `Vi ökar. ${reps} repetitioner nu.`,
   intensityDownReps: (reps) => `Vi lugnar ner det. ${reps} repetitioner räcker.`,
@@ -151,6 +163,7 @@ const en: CoachScript = {
   numbers: NUMBERS_EN,
   greeting: (name, workout) =>
     name ? `Hey ${name}! Time for ${workout}. I count, you move.` : `Time for ${workout}. I count, you move.`,
+  welcomeBack: (step, total) => `Welcome back. We continue with step ${step} of ${total}.`,
   getReady: (exercise, target) => `Next: ${exercise}. ${target}. Get ready.`,
   nextUp: (exercise) => `Next exercise: ${exercise}.`,
   repsTarget: (reps) => `${reps} reps`,
@@ -170,6 +183,10 @@ const en: CoachScript = {
   tapWhenReady: 'Tap when you are ready.',
   paused: 'Paused.',
   resumed: 'Let’s continue.',
+  resumeAt: (set, totalSets, rep, totalReps) =>
+    totalSets > 1 ? `Let’s continue. Set ${set} of ${totalSets}, rep ${rep} of ${totalReps}.` : `Let’s continue. Rep ${rep} of ${totalReps}.`,
+  tempoSlower: 'Slower tempo.',
+  tempoFaster: 'Faster tempo.',
   intensity: (label) => `Intensity: ${EN_LABELS[label]}.`,
   intensityUpReps: (reps) => `Stepping up. ${reps} reps now.`,
   intensityDownReps: (reps) => `Easing off. ${reps} reps will do.`,
