@@ -1,5 +1,5 @@
 import { Coach } from '../coach/Coach';
-import { SilentSpeech } from '../coach/SpeechPort';
+import { SilentSpeech, type SpeechPort, type SpeechUtterance } from '../coach/SpeechPort';
 import { DEFAULT_SETTINGS, lz, type Exercise, type Workout, type WorkoutBlock } from '../domain';
 import type { InteractionLevel } from '../domain/settings';
 import { buildSessionPlan } from '../engine/planner';
@@ -80,7 +80,7 @@ const WORKOUT_SLOW: Workout = {
 
 const slowLookup = (id: string) => [EX_SLOW_SQUAT, EX_PLANK].find((e) => e.id === id);
 
-/** Plank with a key cue + coach cues so rest tips have something to say. */
+/** Plank with a key cue and how-to step for pre-countdown guidance tests. */
 const EX_PLANK_CUED: Exercise = {
   ...EX_PLANK,
   cue: lz('Spänn magen.', 'Brace the core.'),
@@ -92,14 +92,36 @@ const EX_PLANK_CUED: Exercise = {
 const cuedLookup = (id: string) => [EX_SQUAT, EX_PLANK_CUED].find((e) => e.id === id);
 const WORKOUT_CUED: Workout = { ...WORKOUT_SLOW, id: 'cued', blocks: [BLOCK_MAIN] };
 
+class DeferredSpeech implements SpeechPort {
+  readonly spoken: SpeechUtterance[] = [];
+  private onDone?: () => void;
+
+  speak(utterance: SpeechUtterance): void {
+    this.spoken.push(utterance);
+    this.onDone = utterance.onDone;
+  }
+
+  stop(): void {
+    this.onDone = undefined;
+  }
+
+  isSpeaking(): boolean {
+    return this.onDone !== undefined;
+  }
+
+  finish(): void {
+    const done = this.onDone;
+    this.onDone = undefined;
+    done?.();
+  }
+}
+
 describe('Coach – announcements', () => {
-  it('greets, then introduces the exercise with target, set number and cue in Swedish', () => {
+  it('greets, then introduces the exercise with target, set number and brief guidance in Swedish', () => {
     const { engine, texts } = setup();
     engine.start();
     expect(texts()).toEqual([
-      'Dags för Test. Jag räknar, du kör. Nästa: Knäböj. 5 repetitioner. Gör dig redo.',
-      'Set 1 av 2.',
-      'Bröstet upp.',
+      'Dags för Test. Jag räknar, du kör. Nästa: Knäböj. 5 repetitioner. Set 1 av 2. Bröstet upp.',
     ]);
   });
 
@@ -112,14 +134,14 @@ describe('Coach – announcements', () => {
   it('speaks English when locale is en', () => {
     const { engine, texts, speech } = setup({ locale: 'en' });
     engine.start();
-    expect(texts()[0]).toBe('Time for Test. I count, you move. Next: Squat. 5 reps. Get ready.');
+    expect(texts()[0]).toBe('Time for Test. I count, you move. Next: Squat. 5 reps. Set 1 of 2. Chest up.');
     expect(speech.spoken[0]?.language).toBe('en-US');
   });
 
-  it('intro interrupts, set number + cue queue behind it', () => {
+  it('keeps the introduction and guidance in one interrupting utterance', () => {
     const { engine, speech } = setup();
     engine.start();
-    expect(speech.spoken.map((u) => u.priority)).toEqual(['interrupt', 'queue', 'queue']);
+    expect(speech.spoken.map((u) => u.priority)).toEqual(['interrupt']);
   });
 });
 
@@ -172,6 +194,37 @@ describe('Coach – counting', () => {
     speech.spoken.length = 0;
     run(200); // rest ends → set 2 starts straight away (no re-announce in hands-free)
     expect(texts().slice(0, 3)).toEqual(['Set 2 av 2.', 'Sista setet. Ge allt!', 'Kör!']);
+  });
+});
+
+describe('Coach – instructions before countdown', () => {
+  it('waits for the spoken introduction to finish before starting 3-2-1', () => {
+    const clock = new FakeClock();
+    const engine = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now, getReadySeconds: 3 });
+    const speech = new DeferredSpeech();
+    const coach = new Coach({
+      speech,
+      locale: 'sv',
+      voice: { ...DEFAULT_SETTINGS.voice, motivation: false, nextExerciseInstructions: 'brief' },
+      random: () => 0.99,
+    });
+    coach.attach(engine);
+
+    engine.start();
+    expect(speech.spoken.map((u) => u.text)).toEqual([
+      'Dags för Test. Jag räknar, du kör. Nästa: Knäböj. 5 repetitioner. Set 1 av 2. Bröstet upp.',
+    ]);
+
+    clock.advance(10_000);
+    engine.tick(clock.now());
+    expect(speech.spoken).toHaveLength(1); // countdown remains held
+
+    speech.finish();
+    engine.tick(clock.now());
+    expect(speech.spoken.map((u) => u.text)).toEqual([
+      'Dags för Test. Jag räknar, du kör. Nästa: Knäböj. 5 repetitioner. Set 1 av 2. Bröstet upp.',
+      'tre',
+    ]);
   });
 });
 
@@ -307,63 +360,47 @@ describe('Coach – rest and transitions', () => {
     expect(said.indexOf('Vila 20 sekunder.')).toBeLessThan(said.indexOf('Nästa övning: Planka.'));
   });
 
-  it('speaks one tip for the next exercise during the rest (restTips = one)', () => {
-    const { engine, texts, run, speech } = setup({ workout: WORKOUT_CUED, lookup: cuedLookup, voice: { restTips: 'one' } });
+  it('reads brief execution guidance before the countdown for the next exercise', () => {
+    const { engine, texts, run, speech } = setup({
+      workout: WORKOUT_CUED,
+      lookup: cuedLookup,
+      voice: { nextExerciseInstructions: 'brief' },
+    });
     engine.start();
-    run(3_000 + 10_000 + 10_000 + 10_000); // transition rest (20 s) has just started
-    speech.spoken.length = 0;
-    run(19_500); // stop just before the rest ends
-    const said = texts();
-    expect(said).toContain('Tips inför planka: Spänn magen.');
-    expect(said.filter((l) => l.startsWith('Tips inför') || l.startsWith('Och:'))).toHaveLength(1);
-    // the tip comes a few seconds in, and the rest still ends with get-ready + countdown
-    expect(said.indexOf('Tips inför planka: Spänn magen.')).toBeGreaterThanOrEqual(0);
-    expect(said.slice(-3)).toEqual(['Gör dig redo.', 'två', 'ett']);
+    run(3_000 + 10_000 + 10_000 + 10_000 + 20_000); // transition rest ends → plank is introduced
+    const announcement = texts().at(-1);
+    expect(announcement).toBe('Sista övningen. Nu avslutar vi starkt. Nästa: Planka. 10 sekunder. Spänn magen.');
+    // The instruction is spoken as part of the announcement, before the next
+    // engine tick can emit 3-2-1.
+    expect(speech.spoken.at(-1)?.priority).toBe('interrupt');
   });
 
-  it('spreads all key points over the rest (restTips = full) and stays quiet when off', () => {
-    const full = setup({ workout: WORKOUT_CUED, lookup: cuedLookup, voice: { restTips: 'full' } });
-    full.engine.start();
-    full.run(3_000 + 10_000 + 10_000 + 10_000);
-    full.speech.spoken.length = 0;
-    full.run(20_000);
-    const tips = full.texts().filter((l) => l.startsWith('Tips inför') || l.startsWith('Och:'));
-    // 20 s rest → 'full' degrades to two tips (three only fit in ≥ 45 s)
-    expect(tips).toEqual(['Tips inför planka: Spänn magen.', 'Och: Rak linje.']);
+  it('reads all how-to steps in detailed mode and none when guidance is off', () => {
+    const detailed = setup({
+      workout: WORKOUT_SLOW,
+      lookup: slowLookup,
+      voice: { nextExerciseInstructions: 'detailed' },
+    });
+    detailed.engine.start();
+    expect(detailed.texts()[0]).toContain('Stå höftbrett.');
+    expect(detailed.texts()[0]).not.toContain('Bröstet upp.');
 
-    const off = setup({ workout: WORKOUT_CUED, lookup: cuedLookup, voice: { restTips: 'off' } });
+    const off = setup({
+      workout: WORKOUT_SLOW,
+      lookup: slowLookup,
+      voice: { nextExerciseInstructions: 'off' },
+    });
     off.engine.start();
-    off.run(3_000 + 10_000 + 10_000 + 10_000);
-    off.speech.spoken.length = 0;
-    off.run(20_000);
-    expect(off.texts().some((l) => l.startsWith('Tips inför') || l.startsWith('Och:'))).toBe(false);
-  });
-
-  it('gives no tips between sets of the same exercise or on very short rests', () => {
-    const { engine, texts, run, speech } = setup({ workout: WORKOUT_CUED, lookup: cuedLookup, voice: { restTips: 'full' } });
-    engine.start();
-    run(3_000 + 9_900);
-    speech.spoken.length = 0;
-    run(200 + 9_500); // set 1 done → 10 s rest before set 2 of the same exercise
-    expect(texts().some((l) => l.startsWith('Tips inför'))).toBe(false);
-    expect(texts()).toContain('Ett set kvar.');
-  });
-
-  it('speaks English tips and announcements', () => {
-    const { engine, texts, run, speech } = setup({ locale: 'en', workout: WORKOUT_CUED, lookup: cuedLookup });
-    engine.start();
-    run(3_000 + 10_000 + 10_000 + 9_900);
-    speech.spoken.length = 0;
-    run(200 + 20_000);
-    expect(texts()).toContain('Coming up: Plank, 10 seconds.');
-    expect(texts()).toContain('Tip for plank: Brace the core.');
+    expect(off.texts()[0]).toContain('Nästa: Knäböj. 10 repetitioner. Set 1 av 2.');
+    expect(off.texts()[0]).not.toContain('Stå höftbrett.');
+    expect(off.texts()[0]).not.toContain('Bröstet upp.');
   });
 
   it('flags the last exercise of the workout when it is announced', () => {
     const { engine, texts, run } = setup();
     engine.start();
     run(3_000 + 10_000 + 10_000 + 10_000 + 20_000); // through both squat sets + transition
-    expect(texts()).toContain('Sista övningen. Nu avslutar vi starkt.');
+    expect(texts().some((line) => line.includes('Sista övningen. Nu avslutar vi starkt.'))).toBe(true);
   });
 
   it('says "get ready" three seconds before a rest ends', () => {

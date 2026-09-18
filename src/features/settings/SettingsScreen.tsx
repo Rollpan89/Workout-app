@@ -4,11 +4,11 @@ import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { getSpeech } from '@/adapters';
 import {
   effectiveVoiceParams,
-  REST_TIPS_LEVELS,
+  NEXT_EXERCISE_INSTRUCTION_LEVELS,
   SPEECH_LANGUAGE_TAG,
   VOICE_ENERGIES,
   type Locale,
-  type RestTipsLevel,
+  type NextExerciseInstructionLevel,
   type VoiceEnergy,
   type WorkoutGoal,
 } from '@/core/domain';
@@ -49,10 +49,10 @@ export function SettingsScreen() {
     energetic: t.settings.energyEnergetic,
     hype: t.settings.energyHype,
   };
-  const restTipsLabel: Record<RestTipsLevel, string> = {
-    off: t.settings.restTipsOff,
-    one: t.settings.restTipsOne,
-    full: t.settings.restTipsFull,
+  const nextExerciseInstructionsLabel: Record<NextExerciseInstructionLevel, string> = {
+    off: t.settings.nextExerciseInstructionsOff,
+    brief: t.settings.nextExerciseInstructionsBrief,
+    detailed: t.settings.nextExerciseInstructionsDetailed,
   };
 
   return (
@@ -155,14 +155,14 @@ export function SettingsScreen() {
             testID="toggle-announce-next"
           />
         </Row>
-        <Row label={t.settings.restTips} hint={t.settings.restTipsDesc} stacked>
+        <Row label={t.settings.nextExerciseInstructions} hint={t.settings.nextExerciseInstructionsDesc} stacked>
           <View style={styles.chipRow}>
-            {REST_TIPS_LEVELS.map((level) => (
+            {NEXT_EXERCISE_INSTRUCTION_LEVELS.map((level) => (
               <Chip
                 key={level}
-                label={restTipsLabel[level]}
-                selected={settings.voice.restTips === level}
-                onPress={() => updateVoice({ restTips: level })}
+                label={nextExerciseInstructionsLabel[level]}
+                selected={settings.voice.nextExerciseInstructions === level}
+                onPress={() => updateVoice({ nextExerciseInstructions: level })}
               />
             ))}
           </View>

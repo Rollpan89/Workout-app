@@ -67,6 +67,8 @@ export interface SessionSnapshot {
   readonly restTotalSeconds: number;
   /** Seconds remaining in the get-ready countdown while announcing. */
   readonly announceRemainingSeconds: number;
+  /** True while the coach is still reading instructions before 3-2-1 begins. */
+  readonly countdownHeld: boolean;
   readonly sessionElapsedSeconds: number;
   readonly startedAt?: number; // epoch ms
   /** Cumulative stats for the metrics engine. */

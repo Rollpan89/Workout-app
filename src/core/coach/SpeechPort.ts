@@ -16,6 +16,8 @@ export interface SpeechUtterance {
    *  - 'drop':      skip if busy (low-value chatter)
    */
   readonly priority: 'interrupt' | 'queue' | 'drop';
+  /** Called after this utterance has finished naturally or the adapter times out. */
+  readonly onDone?: () => void;
 }
 
 export interface SpeechPort {
@@ -30,6 +32,7 @@ export class SilentSpeech implements SpeechPort {
   readonly spoken: SpeechUtterance[] = [];
   speak(utterance: SpeechUtterance): void {
     this.spoken.push(utterance);
+    utterance.onDone?.();
   }
   stop(): void {
     /* noop */

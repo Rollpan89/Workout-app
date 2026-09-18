@@ -33,22 +33,47 @@ export interface StartSessionOptions {
   readonly resumeFrom?: SessionCheckpoint;
 }
 
-interface SessionState {
+// --- 1. Metadata Store (Static/Slow data) ---
+
+interface SessionMetadataState {
   plan?: SessionPlan;
-  snapshot?: SessionSnapshot;
-  /** Log produced when the session finished; cleared on `reset`. */
   result?: SessionLog;
   saving: boolean;
-  /**
-   * Checkpoint of a session that was interrupted (app killed / crashed),
-   * found at start-up. Undefined once resumed or discarded.
-   */
   pendingCheckpoint?: SessionCheckpoint;
+  setPlan: (plan: SessionPlan | undefined) => void;
+  setResult: (result: SessionLog | undefined) => void;
+  setSaving: (saving: boolean) => void;
+  setPendingCheckpoint: (cp: SessionCheckpoint | undefined) => void;
+}
 
-  /** Look for an interrupted session (called once at app start). */
+export const useSessionMetadataStore = create<SessionMetadataState>((set) => ({
+  plan: undefined,
+  result: undefined,
+  saving: false,
+  pendingCheckpoint: undefined,
+  setPlan: (plan) => set({ plan }),
+  setResult: (result) => set({ result }),
+  setSaving: (saving) => set({ saving }),
+  setPendingCheckpoint: (pendingCheckpoint) => set({ pendingCheckpoint }),
+}));
+
+// --- 2. Tick Store (High-frequency snapshot data) ---
+
+interface SessionTickState {
+  snapshot?: SessionSnapshot;
+  setSnapshot: (snapshot: SessionSnapshot) => void;
+}
+
+export const useSessionTickStore = create<SessionTickState>((set) => ({
+  snapshot: undefined,
+  setSnapshot: (snapshot) => set({ snapshot }),
+}));
+
+// --- 3. Main Store (Actions & Orchestration) ---
+
+interface SessionActions {
   loadPendingCheckpoint: () => Promise<void>;
   discardPendingCheckpoint: () => void;
-
   start: (options: StartSessionOptions) => void;
   pause: () => void;
   resume: () => void;
@@ -59,7 +84,6 @@ interface SessionState {
   skipRest: () => void;
   skipStep: () => void;
   adjustIntensity: (delta: 1 | -1) => void;
-  /** Slower (+1) or faster (−1) rep count for the current exercise; remembered. */
   adjustTempo: (delta: 1 | -1) => void;
   stop: () => void;
   reset: () => void;
@@ -119,13 +143,6 @@ function teardownRuntime(): void {
   void getAudioSession().end();
 }
 
-/**
- * Background policy. The whole point of the app is that the coach keeps
- * talking with the screen locked, so we do NOT pause on `background`. We do
- * tick immediately on return: if the OS froze our timers the engine's
- * bounded catch-up moves the set forward and the coach re-announces the
- * position ("Vi fortsätter. Set 2, rep 5 av 12.").
- */
 function handleAppStateChange(next: AppStateStatus): void {
   const wasBackground = lastAppState === 'background' || lastAppState === 'inactive';
   lastAppState = next;
@@ -134,13 +151,7 @@ function handleAppStateChange(next: AppStateStatus): void {
   }
 }
 
-export const useSessionStore = create<SessionState>((set, get) => ({
-  plan: undefined,
-  snapshot: undefined,
-  result: undefined,
-  saving: false,
-  pendingCheckpoint: undefined,
-
+export const useSessionStore = create<SessionActions>((set, get) => ({
   loadPendingCheckpoint: async () => {
     try {
       const cp = await getRepositories().sessions.loadCheckpoint();
@@ -150,7 +161,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         clearCheckpoint();
         return;
       }
-      set({ pendingCheckpoint: cp });
+      useSessionMetadataStore.getState().setPendingCheckpoint(cp);
     } catch (error) {
       console.warn('[session] could not read checkpoint', error);
     }
@@ -158,7 +169,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   discardPendingCheckpoint: () => {
     clearCheckpoint();
-    set({ pendingCheckpoint: undefined });
+    useSessionMetadataStore.getState().setPendingCheckpoint(undefined);
   },
 
   start: ({ workout, intensity, interactionLevel, tempoFactor, resumeFrom }) => {
@@ -178,9 +189,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       tempoFactor: plan.steps[0] ? tempoFor(plan.steps[0].exercise.id) : tempoFactor,
     });
 
-    // Each exercise starts at its own learned tempo (or the session default).
-    // Done silently: the engine skips the tempoChanged event when unchanged,
-    // and the coach only announces tempo changes made by the user.
     const applyExerciseTempo = (exerciseId: string) => {
       const wanted = tempoFor(exerciseId);
       if (engine && Math.abs(engine.tempo - wanted) > 0.001) engine.setTempoFactor(wanted, { silent: true });
@@ -198,7 +206,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
     coach.attach(engine);
 
-    // Keep the coach in sync if the user changes voice/locale mid-session
     unsubscribeSettings = useSettingsStore.subscribe((state) => {
       coach?.updateSettings(
         state.settings.locale,
@@ -211,7 +218,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
 
     engine.events.on('snapshot', (snapshot) => {
-      set({ snapshot });
+      useSessionTickStore.getState().setSnapshot(snapshot);
       if (snapshot.phase !== 'idle' && snapshot.phase !== 'finished') writeCheckpoint();
     });
 
@@ -220,23 +227,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       timer = undefined;
       appStateSub?.remove();
       appStateSub = undefined;
-      // Let the coach's closing line finish before the session is released.
       setTimeout(() => void getAudioSession().end(), 4000);
       clearCheckpoint();
       const profile = useSettingsStore.getState().settings.profile;
       const log = buildSessionLog(plan, snapshot, completed, profile, lookup);
-      set({ result: log, saving: true });
+      
+      useSessionMetadataStore.getState().setResult(log);
+      useSessionMetadataStore.getState().setSaving(true);
+      
       useHistoryStore
         .getState()
         .add(log)
         .catch((error) => console.warn('[session] failed to save log', error))
-        .finally(() => set({ saving: false }));
+        .finally(() => useSessionMetadataStore.getState().setSaving(false));
     });
 
-    set({ plan, snapshot: engine.snapshot, result: undefined, pendingCheckpoint: undefined });
-    // The keep-alive player also drives the engine while the OS has frozen
-    // our JS timers (Android with the screen locked). Ticks are idempotent,
-    // so running both clocks in the foreground is harmless.
+    useSessionMetadataStore.getState().setPlan(plan);
+    useSessionMetadataStore.getState().setSnapshot(engine.snapshot); // Note: Snapshot might be undefined initially, we'll update via event
+    useSessionMetadataStore.getState().setResult(undefined);
+    useSessionMetadataStore.getState().setPendingCheckpoint(undefined);
+    useSessionTickStore.getState().setSnapshot(engine.snapshot);
+
     const startedEngine = engine;
     void getAudioSession().begin({
       onTick: () => {
@@ -270,21 +281,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!engine) return;
     const step = engine.snapshot.step;
     const next = engine.setTempoFactor(engine.tempo + delta * TEMPO_STEP);
-    // Learn it for this exercise so the next session starts right.
     if (step) useSettingsStore.getState().setTempoOverride(step.exercise.id, next);
   },
   stop: () => engine?.stop(),
 
   reset: () => {
-    const wasRunning = !!engine && !get().result;
+    const currentSnapshot = useSessionTickStore.getState().snapshot;
+    const currentPlan = useSessionMetadataStore.getState().plan;
+    const currentResult = useSessionMetadataStore.getState().result;
+    
+    const wasRunning = !!engine && !currentResult;
     teardownRuntime();
-    if (wasRunning) clearCheckpoint(); // user left mid-session on purpose
-    if (get().snapshot || get().plan) {
-      set({ plan: undefined, snapshot: undefined, result: undefined, saving: false });
+    if (wasRunning) clearCheckpoint();
+    if (currentSnapshot || currentPlan) {
+      useSessionMetadataStore.getState().setPlan(undefined);
+      useSessionMetadataStore.getState().setSnapshot(undefined); // This is actually part of TickStore in logic, but for reset:
+      useSessionTickStore.getState().setSnapshot(undefined);
+      useSessionMetadataStore.getState().setResult(undefined);
+      useSessionMetadataStore.getState().setSaving(false);
     }
   },
 }));
 
-export const selectSnapshot = (s: SessionState) => s.snapshot;
-export const selectIsActive = (s: SessionState) =>
-  !!s.snapshot && s.snapshot.phase !== 'idle' && s.snapshot.phase !== 'finished';
+// --- Helpers for UI components ---
+
+export const selectSnapshot = (s: any) => s.snapshot; // If used with useSessionTickStore
+// To maintain backward compatibility with components using useSessionStore(selectSnapshot):
+export const selectSnapshotLegacy = (s: any) => useSessionTickStore.getState().snapshot;
+
+export const selectIsActive = () => {
+  const snap = useSessionTickStore.getState().snapshot;
+  return !!snap && snap.phase !== 'idle' && snap.phase !== 'finished';
+};
+
+// Compatibility exports for components that haven't been updated yet
+export { useSessionMetadataStore, useSessionTickStore };

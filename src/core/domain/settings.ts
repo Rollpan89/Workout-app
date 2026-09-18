@@ -43,8 +43,8 @@ export interface VoiceSettings {
   readonly tempoCues: boolean;
   /** Say which exercise comes next *before* the rest starts (when it changes). */
   readonly announceNext: boolean;
-  /** Tips for the upcoming exercise during the rest: none, one, or all key points. */
-  readonly restTips: RestTipsLevel;
+  /** How much execution guidance to read before the next exercise countdown. */
+  readonly nextExerciseInstructions: NextExerciseInstructionLevel;
   /** Voice identifier chosen by the user (platform-specific), undefined = auto. */
   readonly voiceId?: string;
   /** Energy preset – tunes rate/pitch together. */
@@ -52,8 +52,9 @@ export interface VoiceSettings {
   readonly haptics: boolean;
 }
 
-export type RestTipsLevel = 'off' | 'one' | 'full';
-export const REST_TIPS_LEVELS: readonly RestTipsLevel[] = ['off', 'one', 'full'];
+/** Execution guidance for each new exercise: none, a concise cue, or every how-to step. */
+export type NextExerciseInstructionLevel = 'off' | 'brief' | 'detailed';
+export const NEXT_EXERCISE_INSTRUCTION_LEVELS: readonly NextExerciseInstructionLevel[] = ['off', 'brief', 'detailed'];
 
 export type VoiceEnergy = 'calm' | 'energetic' | 'hype';
 export const VOICE_ENERGIES: readonly VoiceEnergy[] = ['calm', 'energetic', 'hype'];
@@ -121,7 +122,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     techniqueCues: true,
     tempoCues: true,
     announceNext: true,
-    restTips: 'one',
+    nextExerciseInstructions: 'brief',
     energy: 'energetic',
     haptics: true,
   },

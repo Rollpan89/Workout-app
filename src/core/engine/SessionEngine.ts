@@ -85,6 +85,8 @@ export class SessionEngine {
 
   private restTotalSeconds = 0;
   private lastWholeSecond = -1; // for tick de-duplication across phases
+  /** A coach can hold the countdown until its spoken introduction has ended. */
+  private countdownHeld = false;
 
   private startedAt?: number;
   private phaseStartedAt = 0; // epoch ms
@@ -286,6 +288,27 @@ export class SessionEngine {
     this.publish();
   }
 
+  /**
+   * Hold the current exercise's countdown while the coach reads its setup
+   * instructions. This is intentionally opt-in so a SessionEngine without a
+   * coach retains its normal deterministic behaviour.
+   */
+  holdCountdown(): void {
+    if (this.phase === 'announcing') this.countdownHeld = true;
+  }
+
+  /** Release a countdown previously held with holdCountdown(). */
+  startCountdown(): void {
+    const isAnnouncing = this.phase === 'announcing' || (this.phase === 'paused' && this.pausedFrom === 'announcing');
+    if (!isAnnouncing || !this.countdownHeld) return;
+    this.countdownHeld = false;
+    // The spoken introduction is not part of the get-ready timer. Anchor it
+    // here so the user always receives the full 3-2-1 after it has finished.
+    this.phaseStartedAt = this.now();
+    this.lastWholeSecond = -1;
+    this.publish();
+  }
+
   /** Snapshot everything needed to offer "continue where you left off". */
   checkpoint(now: number = this.now()): SessionCheckpoint | undefined {
     if (this.phase === 'idle' || this.phase === 'finished' || this.startedAt === undefined) return undefined;
@@ -355,6 +378,7 @@ export class SessionEngine {
     this.halfwayEmitted = false;
     this.lastRepEmittedAt = 0;
     this.lastWholeSecond = -1;
+    this.countdownHeld = false;
     this.phase = 'announcing';
     this.phaseStartedAt = this.now();
     this.events.emit('exerciseAnnounced', {
@@ -443,6 +467,7 @@ export class SessionEngine {
   /* --------------------------------------------------------------------- */
 
   private tickAnnouncing(now: number): void {
+    if (this.countdownHeld) return;
     const elapsed = this.phaseElapsedSeconds(now);
     const remaining = Math.ceil(this.getReadySeconds - elapsed);
     const whole = Math.floor(elapsed);
@@ -623,6 +648,7 @@ export class SessionEngine {
       restTotalSeconds: activePhase === 'resting' ? this.restTotalSeconds : 0,
       announceRemainingSeconds:
         activePhase === 'announcing' ? Math.max(0, this.getReadySeconds - phaseElapsed) : 0,
+      countdownHeld: activePhase === 'announcing' && this.countdownHeld,
       sessionElapsedSeconds: Math.max(0, sessionElapsed),
       startedAt: this.startedAt,
       stats: this.stats,

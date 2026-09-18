@@ -34,7 +34,7 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | **Skapa egna pass** i en enkel byggare, eller **kopiera & anpassa** ett färdigt program – redigera och radera direkt från korten i biblioteket, från detaljvyn eller inne i byggaren | ✅ |
 | Röstcoach räknar reps och vila i stadig takt, på svenska eller engelska | ✅ |
 | Coachen är **involverad**: teknik-cues mellan reps, tempo-ord på långsamma lyft, pepp mot slutet av setet (med ditt namn), varierat beröm, "X set kvar", vilo-prat | ✅ |
-| Coachen **annonserar nästa övning (med mål) innan vilan startar** och ger **teknik-tips inför nästa övning under vilan** – ett tips eller alla nyckelpunkter, valbart | ✅ |
+| Coachen **annonserar nästa övning (med mål) innan vilan startar** och läser valfria **utförandeinstruktioner före nästa nedräkning** – inga, korta eller utförliga | ✅ |
 | **Levande röst**: energi-förval (Lugn / Energisk / Full gas), automatiskt val av bästa röst på enheten (premium > förbättrad > standard), röstväljare med provlyssning | ✅ |
 | Tre interaktionsnivåer: **hands-free**, **assisterad**, **manuell** | ✅ |
 | Justera intensitet upp/ner **under** passet – reps, tid och vila skalas direkt, coachen säger vad det innebär ("13 repetitioner nu") | ✅ |
@@ -42,7 +42,7 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Tryck på en övning i översikten → **steg-för-steg-instruktioner**, vanliga fel, coachens cues, tempo, muskler | ✅ |
 | Automatisk beräkning av kalorier (MET-baserad) och muskelpåverkan vid avslut | ✅ |
 | Historik med streak, totaler och muskelbalans | ✅ |
-| Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, tips under vilan), haptik, profil | ✅ |
+| Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, instruktionsnivå före nedräkning), haptik, profil | ✅ |
 | Håller skärmen tänd under pass; **sessionsskärmen får roteras** (liggande: display till vänster, kontroller till höger) | ✅ |
 | **Audiosession under passet** (v4): rösten fortsätter med släckt skärm, spelar i ljudlöst läge och *duckar* musik i stället för att stoppa den. Den tysta keep-alive-spelaren är också **motorns klocka när Android fryser JS-timers** (v4.1) | ✅ |
 | **Bakgrunds-tålig räkning** (v4): efter ett samtal/appbyte hoppar motorn över tiden du inte kunde höra och coachen säger var ni är – aldrig 15 siffror i en klump | ✅ |
@@ -137,7 +137,7 @@ Utöver grundtyperna finns:
 | `exercise.ts` | `Exercise` med `muscles` (last per muskelgrupp 0–1), `met` (metabol ekvivalent), `secondsPerRep` (räknetakt) |
 | `workout.ts` | `Workout` → `WorkoutBlock[]` → `WorkoutExercise[]` med `SetPrescription` (`reps` eller `time`) |
 | `session.ts` | `SessionLog` – det som persisteras när ett pass är klart. `ReadinessLevel` för dagsform |
-| `settings.ts` | `AppSettings`, `InteractionLevel`, `VoiceSettings` (inkl. `announceNext`, `restTips`, `energy`, `voiceId`), `VOICE_ENERGY_PRESETS` + `effectiveVoiceParams()`, `UserProfile`, `DEFAULT_SETTINGS`. Sparade inställningar från äldre versioner djup-mergas över defaults, så nya fält får vettiga värden. |
+| `settings.ts` | `AppSettings`, `InteractionLevel`, `VoiceSettings` (inkl. `announceNext`, `nextExerciseInstructions`, `energy`, `voiceId`), `VOICE_ENERGY_PRESETS` + `effectiveVoiceParams()`, `UserProfile`, `DEFAULT_SETTINGS`. Sparade inställningar från äldre versioner djup-mergas över defaults, så nya fält får vettiga värden. |
 
 ### `src/core/engine` – motorn
 
@@ -205,12 +205,12 @@ Prioritetsmodellen är nyckeln till att räkningen känns stadig: "sju" får ald
  6  7  8 ──► pepp i andra halvan, ibland med namn ("Kom igen Anna!")
 "Två kvar!"  "Sista!"
  beröm (varieras) ─► "Knäböj klart." ─► "Nästa: Planka, 30 sekunder." ─► "Vila 20 sekunder."
- under vilan ─► "Tips inför planka: Spänn magen." (─► "Och: Rak linje." …) ─► "Gör dig redo." två, ett
+ efter vilan ─► "Nästa: Planka. 30 sekunder. Underarmarna i golvet. Rak linje." ─► tre, två, ett
 ```
 
-**Övergångar mellan övningar.** Nästa övning sägs *före* viloraden (inställning `announceNext`), så att du hinner byta plats eller hämta redskap medan klockan tickar. Målet skalas med aktuell intensitet ("Nästa: Knäböj, 15 repetitioner."). Under vilan schemalägger coachen teknik-tips för den *kommande* övningen (inställning `restTips`: `off` / `one` / `full`) hämtade ur `exercise.cue` + `instructions.coachCues`. Ett tips läggs en bit in i vilan; med `full` sprids upp till tre tips jämnt och de sista 5 sekunderna hålls fria för "Gör dig redo" + nedräkning. Vilor kortare än 8 s och vilor mellan set av *samma* övning får inga tips (där sägs "X set kvar" som förut). Tipsen ligger på **motorns klocka** (`restTick`), så de pausar med passet.
+**Övergångar mellan övningar.** Nästa övning kan sägas *före* viloraden (inställning `announceNext`), så att du hinner byta plats eller hämta redskap medan klockan tickar. Precis före varje ny övnings nedräkning introduceras övningen alltid med intensitetsskalat mål. Därefter läses antingen ingen, en kort eller alla steg-för-steg-instruktioner upp (`nextExerciseInstructions`: `off` / `brief` / `detailed`). Nedräkningen 3–2–1 börjar först när den uppläsningen är klar.
 
-Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues, tempo-räkning, annonsering av nästa övning och vilo-tips kan stängas av var för sig i Inställningar.
+Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues, tempo-räkning, annonsering av nästa övning och instruktionsnivån före nedräkning kan ställas in var för sig.
 
 **Röstens energi.** `VoiceSettings.energy` (`calm` / `energetic` / `hype`) är ett förval som multipliceras med användarens tempo: `effectiveVoiceParams()` i `domain/settings.ts` ger rate/pitch som skickas med varje utterance (Energisk = 1.10× / 1.08, Full gas = 1.20× / 1.15). Standard är *Energisk*.
 
@@ -493,7 +493,7 @@ npm test
 | `core/__tests__/planner.test.ts` | Utplattning, varv, vila-regler, felhantering |
 | `core/__tests__/intensity.test.ts` | Skala, klämning, readiness-mappning |
 | `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, **begränsad ikapp-räkning efter bakgrundsluckor**, paus, intensitet mitt i set, **tempo mitt i set (bevarat rep-fönster, klämning)**, **checkpoint/restore**, alla tre interaktionsnivåer |
-| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål) och **vilo-tips** (`off`/`one`/`full`, inga tips mellan set av samma övning) |
+| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål) och **instruktioner före nedräkning** (`off`/`brief`/`detailed`, där 3–2–1 väntar på uppläsningen) |
 | `core/__tests__/voice.test.ts` | Röstrankningen (premium > enhanced > standard > legacy) och energi-förvalens rate/pitch |
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik, **jämförelse med förra passet**, **kaloriintervall** |
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, **varv/cirklar** (kompilering, klämning, kopiering behåller varv), repository-CRUD, **historik-tak (365) + checkpoint-rundtur** |
@@ -501,7 +501,7 @@ npm test
 | `adapters/__tests__/audioSession.test.ts` | Audiosessionen: rätt `setAudioModeAsync`-läge, tyst loop, **statushändelser → ticks**, prenumerationen släpps vid `end()`, idempotens, `end()` under pågående `begin()`, trasig native-modul |
 | `ui/__tests__/ErrorBoundary.test.tsx` | Fångar renderfel, visar svensk felsida, lämnar felet till `CrashReporter`, återhämtar sig på "Starta om" |
 | `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, tips-nivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, instruktionsnivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
 
 126 tester, ~10 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 

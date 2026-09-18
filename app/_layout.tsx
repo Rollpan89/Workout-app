@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -18,29 +18,15 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useAppFonts();
-  const settingsHydrated = useSettingsStore((s) => s.hydrated);
-  const historyHydrated = useHistoryStore((s) => s.hydrated);
-  const hydrateSettings = useSettingsStore((s) => s.hydrate);
-  const hydrateHistory = useHistoryStore((s) => s.hydrate);
-  const customHydrated = useCustomWorkoutStore((s) => s.hydrated);
-  const hydrateCustom = useCustomWorkoutStore((s) => s.hydrate);
-  const loadPendingCheckpoint = useSessionStore((s) => s.loadPendingCheckpoint);
+  const isReady = useInitialLoad();
 
   useEffect(() => {
-    void hydrateSettings();
-    void hydrateHistory();
-    void hydrateCustom();
-    void loadPendingCheckpoint();
-  }, [hydrateSettings, hydrateHistory, hydrateCustom, loadPendingCheckpoint]);
+    if (isReady) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [isReady]);
 
-  const ready =
-    (fontsLoaded || !!fontError) && settingsHydrated && historyHydrated && customHydrated;
-
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync().catch(() => undefined);
-  }, [ready]);
-
-  if (!ready) {
+  if (!isReady || (!fontsLoaded && !fontError)) {
     return <View style={styles.splash} />;
   }
 
@@ -53,6 +39,44 @@ export default function RootLayout() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+/**
+ * Hook to handle the orchestrated hydration of all global stores.
+ * Ensures all asynchronous persistence tasks are completed before the app renders.
+ */
+function useInitialLoad() {
+  const [ready, setReady] = useState(false);
+  
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
+  const hydrateHistory = useHistoryStore((s) => s.hydrate);
+  const hydrateCustom = useCustomWorkoutStore((s) => s.hydrate);
+  const loadPendingCheckpoint = useSessionStore((s) => s.loadPendingCheckpoint);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function prepare() {
+      try {
+        // Execute all hydration and recovery tasks in parallel
+        await Promise.all([
+          hydrateSettings(),
+          hydrateHistory(),
+          hydrateCustom(),
+          loadPendingCheckpoint(),
+        ]);
+      } catch (error) {
+        console.error('[RootLayout] Critical hydration failure:', error);
+      } finally {
+        if (isMounted) setReady(true);
+      }
+    }
+
+    prepare();
+    return () => { isMounted = false; };
+  }, [hydrateSettings, hydrateHistory, hydrateCustom, loadPendingCheckpoint]);
+
+  return ready;
 }
 
 function AppStack() {

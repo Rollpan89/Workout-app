@@ -138,31 +138,34 @@ export class ExpoSpeech implements SpeechPort {
     const voice = this.pinnedVoice[utterance.language] ?? this.autoVoice[utterance.language];
     const rate = clamp(utterance.rate ?? 1, 0.5, 2) * platformRateScale();
 
-    this.armWatchdog(seq, estimateDurationMs(utterance.text, rate));
+    this.armWatchdog(seq, utterance, estimateDurationMs(utterance.text, rate));
 
     Speech.speak(utterance.text, {
       language: utterance.language,
       rate,
       pitch: clamp(utterance.pitch ?? 1, 0.5, 2),
       ...(voice ? { voice } : {}),
-      onDone: () => this.onFinished(seq),
-      onStopped: () => this.onFinished(seq),
-      onError: () => this.onFinished(seq),
+      onDone: () => this.onFinished(seq, utterance, true),
+      // A deliberate stop (pause, a new high-priority line) must not release
+      // an announcement that was waiting to start its countdown.
+      onStopped: () => this.onFinished(seq, utterance, false),
+      onError: () => this.onFinished(seq, utterance, true),
     });
   }
 
   /** Only the most recent utterance may advance the queue. */
-  private onFinished(seq: number): void {
+  private onFinished(seq: number, utterance: SpeechUtterance, completed: boolean): void {
     if (seq !== this.utteranceSeq) return;
     this.clearWatchdog();
     this.speaking = false;
+    if (completed) utterance.onDone?.();
     const next = this.queue.shift();
     if (next) this.speakNow(next);
   }
 
-  private armWatchdog(seq: number, ms: number): void {
+  private armWatchdog(seq: number, utterance: SpeechUtterance, ms: number): void {
     this.clearWatchdog();
-    this.watchdog = setTimeout(() => this.onFinished(seq), ms);
+    this.watchdog = setTimeout(() => this.onFinished(seq, utterance, true), ms);
   }
 
   private clearWatchdog(): void {

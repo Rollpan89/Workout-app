@@ -67,10 +67,10 @@ export class Coach {
   /** Greeting waiting to be merged into the first exercise announcement. */
   private pendingGreeting?: string;
   private resumedAt: number | undefined;
-  /** Tips for the upcoming exercise, scheduled at specific rest-seconds-remaining marks. */
-  private restTips: { at: number; text: string }[] = [];
   /** Exercise id that was already introduced right before the current rest (skip re-announce). */
   private announcedNextId?: string;
+  /** Releases an announcement-held countdown once speech has completed. */
+  private releaseCountdown?: () => void;
 
   constructor(options: CoachOptions) {
     this.speech = options.speech;
@@ -116,21 +116,24 @@ export class Coach {
         const isNewBlock = prev !== undefined && prev.block.id !== step.block.id;
         const isNewRound = prev !== undefined && prev.block.id === step.block.id && prev.round !== step.round;
 
-        if (isNewBlock) this.say(this.script.blockStart(resolveLocalized(step.block.title, this.locale)), 'queue');
-        if (isNewRound && step.rounds > 1) this.say(this.script.roundOf(step.round, step.rounds), 'queue');
-        if (this.isLastExercise(step) && this.planSteps.length > 1) this.say(this.script.lastExercise, 'queue');
-
-        const intro = this.script.getReady(name, targetText);
+        // The engine does not begin 3-2-1 until this entire single utterance
+        // completes. Combining the lines also avoids the priority queue being
+        // interrupted halfway through a detailed instruction.
+        engine.holdCountdown();
+        const lines: string[] = [];
         if (this.pendingGreeting) {
-          this.say(`${this.pendingGreeting} ${intro}`, 'interrupt');
+          lines.push(this.pendingGreeting);
           this.pendingGreeting = undefined;
-        } else {
-          // Block/round lines were just queued – don't cut them off.
-          this.say(intro, isNewBlock || isNewRound ? 'queue' : 'interrupt');
         }
-        if (step.totalSets > 1) this.say(this.script.setOf(step.setNumber, step.totalSets), 'queue');
-        const cue = step.exercise.cue;
-        if (cue) this.say(resolveLocalized(cue, this.locale), 'queue');
+        if (isNewBlock) lines.push(this.script.blockStart(resolveLocalized(step.block.title, this.locale)));
+        if (isNewRound && step.rounds > 1) lines.push(this.script.roundOf(step.round, step.rounds));
+        if (this.isLastExercise(step) && this.planSteps.length > 1) lines.push(this.script.lastExercise);
+        // This introduction is always present, even when detailed guidance is
+        // turned off, so the athlete knows exactly what comes next.
+        lines.push(this.script.exerciseIntro(name, targetText));
+        if (step.totalSets > 1) lines.push(this.script.setOf(step.setNumber, step.totalSets));
+        lines.push(...this.preCountdownInstructions(step));
+        this.sayThenStartCountdown(engine, lines.join(' '));
       }),
 
       events.on('countdownTick', ({ remaining }) => {
@@ -257,23 +260,18 @@ export class Coach {
 
       events.on('restStarted', ({ seconds, nextStep, step }) => {
         this.say(this.script.rest(seconds), 'queue');
-        this.restTips = [];
         if (nextStep) {
           if (nextStep.exercise.id !== step.exercise.id) {
             if (this.announcedNextId !== nextStep.exercise.id) {
               this.say(this.script.nextUp(this.exerciseName(nextStep)), 'queue');
             }
-            this.scheduleRestTips(nextStep, seconds);
           } else {
             const left = step.totalSets - step.setNumber;
             if (left > 0) this.say(this.script.setsLeft(left), 'queue');
           }
         }
-        // Motivation only when the rest isn't already filled with tips
-        if (this.restTips.length === 0) {
-          if (seconds >= 30) this.maybeRestTalk(engine.snapshot.sessionElapsedSeconds);
-          else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
-        }
+        if (seconds >= 30) this.maybeRestTalk(engine.snapshot.sessionElapsedSeconds);
+        else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
       }),
 
       events.on('restTick', ({ remaining, total }) => {
@@ -283,12 +281,6 @@ export class Coach {
         }
         if (remaining <= 2 && remaining >= 1) {
           this.say(spokenNumber(this.script, remaining), 'interrupt');
-          return;
-        }
-        const tip = this.restTips.find((t) => t.at === remaining);
-        if (tip) {
-          this.restTips = this.restTips.filter((t) => t !== tip);
-          this.say(tip.text, 'queue');
           return;
         }
         if (remaining === 10 && total >= 30) {
@@ -316,6 +308,7 @@ export class Coach {
       events.on('paused', () => {
         this.pendingTempo = undefined;
         this.speech.stop();
+        this.releasePendingCountdown();
         this.say(this.script.paused, 'interrupt');
       }),
 
@@ -357,17 +350,22 @@ export class Coach {
   }
 
   detach(): void {
+    this.releasePendingCountdown();
     this.subscriptions.forEach((unsub) => unsub());
     this.subscriptions = [];
     this.pendingTempo = undefined;
     this.pendingGreeting = undefined;
-    this.restTips = [];
     this.announcedNextId = undefined;
+    this.releaseCountdown = undefined;
     this.planSteps = [];
     this.speech.stop();
   }
 
   updateSettings(locale: Locale, voice: VoiceSettings, userName?: string): void {
+    if (this.voice.enabled && !voice.enabled) {
+      this.speech.stop();
+      this.releasePendingCountdown();
+    }
     this.locale = locale;
     this.voice = voice;
     if (userName !== undefined) this.userName = normaliseName(userName);
@@ -377,6 +375,7 @@ export class Coach {
   setSpeech(speech: SpeechPort): void {
     this.speech.stop();
     this.speech = speech;
+    this.releasePendingCountdown();
   }
 
   /* ------------------------------------------------------------------ */
@@ -394,8 +393,17 @@ export class Coach {
     }
   }
 
-  private say(text: string, priority: SpeechUtterance['priority']): void {
-    if (!this.voice.enabled) return;
+  private say(text: string, priority: SpeechUtterance['priority'], onDone?: () => void): void {
+    // An unrelated urgent line (for example an intensity change) interrupts
+    // device speech. Release the hold first so that interruption can never
+    // leave the session permanently waiting for a callback that will not fire.
+    if (priority === 'interrupt' && this.releaseCountdown && onDone !== this.releaseCountdown) {
+      this.releasePendingCountdown();
+    }
+    if (!this.voice.enabled) {
+      onDone?.();
+      return;
+    }
     const { rate, pitch } = effectiveVoiceParams(this.voice);
     this.speech.speak({
       text,
@@ -403,6 +411,7 @@ export class Coach {
       rate,
       pitch,
       priority,
+      onDone,
     });
   }
 
@@ -410,43 +419,35 @@ export class Coach {
     return resolveLocalized(step.exercise.name, this.locale);
   }
 
-  /**
-   * Plan technique tips for the upcoming exercise across the rest.
-   *  - 'one'  → the exercise's key cue (or first coach cue) a few seconds in
-   *  - 'full' → key cue + up to two more coach cues, spread over the rest
-   * Nothing is scheduled for rests shorter than 8 s (no room to listen).
-   */
-  private scheduleRestTips(next: PlanStep, restSeconds: number): void {
-    if (this.voice.restTips === 'off' || restSeconds < 8) return;
-    const name = this.exerciseName(next);
-    const pool: string[] = [];
-    const seen = new Set<string>();
-    const push = (text: string | undefined) => {
-      if (!text || seen.has(text)) return;
-      seen.add(text);
-      pool.push(text);
-    };
-    if (next.exercise.cue) push(resolveLocalized(next.exercise.cue, this.locale));
-    for (const cue of next.exercise.instructions?.coachCues ?? []) push(resolveLocalized(cue, this.locale));
-    if (pool.length === 0) return;
+  /** Builds the requested execution guidance, without ever omitting the exercise introduction. */
+  private preCountdownInstructions(step: PlanStep): string[] {
+    const level = this.voice.nextExerciseInstructions;
+    if (level === 'off') return [];
 
-    // 'full' = up to three tips, but only when there is room to listen:
-    // three lines in a 20 s rest (plus "Nästa:", "Vila", "Gör dig redo" and
-    // the countdown) is a wall of talk, so short rests degrade to two/one.
-    const maxTips = restSeconds >= 45 ? 3 : restSeconds >= 20 ? 2 : 1;
-    const count = this.voice.restTips === 'full' ? Math.min(maxTips, pool.length) : 1;
-    // First tip after the announcements have had time to play; the rest spread
-    // evenly, always leaving the last 5 s for "Gör dig redo" + countdown.
-    const first = Math.max(5, restSeconds - Math.min(6, Math.floor(restSeconds / 3)));
-    const last = 6;
-    this.restTips = pool.slice(0, count).map((tip, i) => {
-      let at = count === 1 ? first : Math.round(first - ((first - last) * i) / (count - 1));
-      if (at === 10 && restSeconds >= 30) at = 11; // keep the "10 s left" call-out free
-      return { at, text: i === 0 ? this.script.tipFor(name, tip) : this.script.tipMore(tip) };
-    });
-    // De-duplicate marks that collapsed onto the same second on very short rests
-    const marks = new Set<number>();
-    this.restTips = this.restTips.filter((t) => (marks.has(t.at) ? false : (marks.add(t.at), true)));
+    const steps = step.exercise.instructions?.steps.map((item) => resolveLocalized(item, this.locale)) ?? [];
+    if (level === 'detailed') {
+      if (steps.length > 0) return steps;
+      return step.exercise.cue ? [resolveLocalized(step.exercise.cue, this.locale)] : [];
+    }
+
+    // A short cue is purpose-written for listening. Exercises without one
+    // still get their first how-to step rather than falling silent.
+    if (step.exercise.cue) return [resolveLocalized(step.exercise.cue, this.locale)];
+    return steps.slice(0, 1);
+  }
+
+  private sayThenStartCountdown(engine: SessionEngine, text: string): void {
+    const release = () => {
+      if (this.releaseCountdown !== release) return;
+      this.releaseCountdown = undefined;
+      engine.startCountdown();
+    };
+    this.releaseCountdown = release;
+    this.say(text, 'interrupt', release);
+  }
+
+  private releasePendingCountdown(): void {
+    this.releaseCountdown?.();
   }
 
   /** True when every remaining step belongs to the same exercise as `step`. */

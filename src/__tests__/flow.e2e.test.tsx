@@ -285,19 +285,19 @@ describe('PulseCoach – core flow', () => {
     expect(settings.interactionLevel).toBe('assisted');
   });
 
-  it('exposes the new voice-guide settings: announce-next, rest tips, energy and voice picker', async () => {
+  it('exposes voice-guide settings for next-exercise instructions, energy and voice picker', async () => {
     renderRouter(routes, { initialUrl: '/settings' });
     await waitFor(() => expect(screen.getByTestId('toggle-announce-next')).toBeTruthy());
 
     // Defaults
     expect(useSettingsStore.getState().settings.voice.announceNext).toBe(true);
-    expect(useSettingsStore.getState().settings.voice.restTips).toBe('one');
+    expect(useSettingsStore.getState().settings.voice.nextExerciseInstructions).toBe('brief');
     expect(useSettingsStore.getState().settings.voice.energy).toBe('energetic');
 
     fireEvent(screen.getByTestId('toggle-announce-next'), 'valueChange', false);
-    fireEvent.press(screen.getByText('Alla nyckelpunkter'));
+    fireEvent.press(screen.getByText('Utförliga'));
     fireEvent.press(screen.getByText('Full gas'));
-    await waitFor(() => expect(useSettingsStore.getState().settings.voice.restTips).toBe('full'));
+    await waitFor(() => expect(useSettingsStore.getState().settings.voice.nextExerciseInstructions).toBe('detailed'));
     expect(useSettingsStore.getState().settings.voice.announceNext).toBe(false);
     expect(useSettingsStore.getState().settings.voice.energy).toBe('hype');
 

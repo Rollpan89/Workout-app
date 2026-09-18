@@ -11,6 +11,8 @@ export interface CoachScript {
   readonly greeting: (name: string | undefined, workout: string) => string;
   /** Session resumed after the app was killed: "Välkommen tillbaka…" */
   readonly welcomeBack: (step: number, totalSteps: number) => string;
+  /** Names the exercise and target before its optional how-to guidance. */
+  readonly exerciseIntro: (exercise: string, target: string) => string;
   readonly getReady: (exercise: string, target: string) => string;
   readonly nextUp: (exercise: string) => string;
   readonly repsTarget: (reps: number) => string;
@@ -56,10 +58,6 @@ export interface CoachScript {
   readonly restTalk: readonly string[]; // said during longer rests
   /** Before the rest starts: "Nästa: Armhävningar, 12 repetitioner." */
   readonly comingUp: (exercise: string, target: string) => string;
-  /** Prefix for a technique tip during rest: "Tips inför armhävningar: …" */
-  readonly tipFor: (exercise: string, tip: string) => string;
-  /** Second/third tip in the same rest, no prefix needed. */
-  readonly tipMore: (tip: string) => string;
   readonly intensityLabels: Readonly<Record<IntensityLabelKey, string>>;
 }
 
@@ -96,6 +94,7 @@ const sv: CoachScript = {
   greeting: (name, workout) =>
     name ? `Hej ${name}! Dags för ${workout}. Jag räknar, du kör.` : `Dags för ${workout}. Jag räknar, du kör.`,
   welcomeBack: (step, total) => `Välkommen tillbaka. Vi fortsätter med steg ${step} av ${total}.`,
+  exerciseIntro: (exercise, target) => `Nästa: ${exercise}. ${target}.`,
   getReady: (exercise, target) => `Nästa: ${exercise}. ${target}. Gör dig redo.`,
   nextUp: (exercise) => `Nästa övning: ${exercise}.`,
   repsTarget: (reps) => `${reps} repetitioner`,
@@ -154,8 +153,6 @@ const sv: CoachScript = {
     'Drick lite vatten om du behöver.',
   ],
   comingUp: (exercise, target) => `Nästa: ${exercise}, ${target}.`,
-  tipFor: (exercise, tip) => `Tips inför ${exercise.toLowerCase()}: ${tip}`,
-  tipMore: (tip) => `Och: ${tip}`,
   intensityLabels: SV_LABELS,
 };
 
@@ -164,6 +161,7 @@ const en: CoachScript = {
   greeting: (name, workout) =>
     name ? `Hey ${name}! Time for ${workout}. I count, you move.` : `Time for ${workout}. I count, you move.`,
   welcomeBack: (step, total) => `Welcome back. We continue with step ${step} of ${total}.`,
+  exerciseIntro: (exercise, target) => `Next: ${exercise}. ${target}.`,
   getReady: (exercise, target) => `Next: ${exercise}. ${target}. Get ready.`,
   nextUp: (exercise) => `Next exercise: ${exercise}.`,
   repsTarget: (reps) => `${reps} reps`,
@@ -222,8 +220,6 @@ const en: CoachScript = {
     'Grab some water if you need it.',
   ],
   comingUp: (exercise, target) => `Coming up: ${exercise}, ${target}.`,
-  tipFor: (exercise, tip) => `Tip for ${exercise.toLowerCase()}: ${tip}`,
-  tipMore: (tip) => `Also: ${tip}`,
   intensityLabels: EN_LABELS,
 };
 

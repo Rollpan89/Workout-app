@@ -146,10 +146,21 @@ export class LocalSettingsRepository implements SettingsRepository {
 /** Deep-merge stored settings over defaults so new fields get sane values. */
 export function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   if (!stored) return DEFAULT_SETTINGS;
+  // v4 used restTips for advice during the rest. Its three values map cleanly
+  // to the pre-countdown guidance introduced later, so keep existing users'
+  // intent when their persisted settings are loaded.
+  const legacyRestTips = (stored.voice as { restTips?: 'off' | 'one' | 'full' } | undefined)?.restTips;
+  const migratedInstructions =
+    legacyRestTips === 'off' ? 'off' : legacyRestTips === 'full' ? 'detailed' : legacyRestTips === 'one' ? 'brief' : undefined;
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    voice: { ...DEFAULT_SETTINGS.voice, ...(stored.voice ?? {}) },
+    voice: {
+      ...DEFAULT_SETTINGS.voice,
+      ...(stored.voice ?? {}),
+      nextExerciseInstructions:
+        stored.voice?.nextExerciseInstructions ?? migratedInstructions ?? DEFAULT_SETTINGS.voice.nextExerciseInstructions,
+    },
     profile: { ...DEFAULT_SETTINGS.profile, ...(stored.profile ?? {}) },
     tempoOverrides: { ...(stored.tempoOverrides ?? {}) },
     // Installations that pre-date the intro have used the app already – don't show it to them.

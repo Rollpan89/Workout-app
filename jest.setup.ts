@@ -6,7 +6,9 @@ jest.mock('react-native-worklets', () => jest.requireActual('react-native-workle
 jest.mock('react-native-reanimated', () => jest.requireActual('react-native-reanimated/mock'));
 
 jest.mock('expo-speech', () => ({
-  speak: jest.fn(),
+  // Complete immediately in Jest so tests model a successful TTS utterance
+  // without waiting for the adapter's real-device watchdog timeout.
+  speak: jest.fn((_text: string, options?: { onDone?: () => void }) => options?.onDone?.()),
   stop: jest.fn(() => Promise.resolve()),
   pause: jest.fn(() => Promise.resolve()),
   resume: jest.fn(() => Promise.resolve()),

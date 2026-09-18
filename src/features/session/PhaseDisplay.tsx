@@ -34,10 +34,16 @@ export function PhaseDisplay({ snapshot, phase, nextStep, isPaused }: PhaseDispl
 
   switch (phase) {
     case 'announcing': {
-      const remaining = Math.ceil(snapshot.announceRemainingSeconds);
-      big = remaining > 0 ? String(remaining) : t.session.go;
-      caption = t.session.getReady;
-      progress = 1 - snapshot.announceRemainingSeconds / 5;
+      if (snapshot.countdownHeld) {
+        big = '…';
+        caption = t.session.instructions;
+        progress = 0;
+      } else {
+        const remaining = Math.ceil(snapshot.announceRemainingSeconds);
+        big = remaining > 0 ? String(remaining) : t.session.go;
+        caption = t.session.getReady;
+        progress = 1 - snapshot.announceRemainingSeconds / 5;
+      }
       color = colors.orange;
       subtitle = targetText(snapshot, t);
       break;
