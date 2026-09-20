@@ -44,6 +44,7 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Historik med streak, totaler och muskelbalans | ✅ |
 | Inställningar: språk, röst (energi, röstval, tempo, räkna varje rep, pepp, teknik-cues, tempo-räkning, annonsera nästa, instruktionsnivå före nedräkning), haptik, profil | ✅ |
 | Håller skärmen tänd under pass; **sessionsskärmen får roteras** (liggande: display till vänster, kontroller till höger) | ✅ |
+| **Fullskärmsläge**: appen körs immersivt – statusfältet och Androids navigationsfält är dolda hela tiden appen är öppen. Dra in från kanten så kommer de fram igen och försvinner sedan av sig själva | ✅ |
 | **Audiosession under passet** (v4): rösten fortsätter med släckt skärm, spelar i ljudlöst läge och *duckar* musik i stället för att stoppa den. Den tysta keep-alive-spelaren är också **motorns klocka när Android fryser JS-timers** (v4.1) | ✅ |
 | **Bakgrunds-tålig räkning** (v4): efter ett samtal/appbyte hoppar motorn över tiden du inte kunde höra och coachen säger var ni är – aldrig 15 siffror i en klump | ✅ |
 | **Justerbart räknetempo** (v4): Lugnt / Normalt / Snabbt före start, ± under setet, **minns per övning** | ✅ |
@@ -463,8 +464,10 @@ Tema: **Hög energi.** Mörkgrå bas, explosiva accenter, snedställda former, k
 | Display-typsnitt | Barlow Condensed 900 Black *Italic* |
 | Brödtext | Barlow 400/500/700 |
 | Progressbars | 10–18 px höga, snedställda, segmentmarkeringar per set |
+| Systemfält | dolda (immersivt läge); dra in från kanten för att se dem |
+| Kursiv stil | **äkta kursiva snitt** (`BarlowCondensed_600SemiBold_Italic` m.fl.) – aldrig `fontStyle: 'italic'`, som låter plattformen luta det raka snittet |
 
-Allt bor i `src/theme/tokens.ts`. Primitiverna i `src/ui/primitives` tar tokens – skärmar hårdkodar inga färger.
+Allt bor i `src/theme/tokens.ts`. Varje variant har en riktig kursiv kompis i `italicFonts`; `<Text italic>` och `Button` använder den. Ett test ser till att alla typsnitt som temat pekar på faktiskt laddas. Primitiverna i `src/ui/primitives` tar tokens – skärmar hårdkodar inga färger.
 
 Session-skärmen är designad för att fungera **utan att man tittar**: en siffra på 168 px, ett ord, en tjock stapel, och ± knappar på fasta positioner längst ner.
 
@@ -499,11 +502,14 @@ npm test
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, **varv/cirklar** (kompilering, klämning, kopiering behåller varv), repository-CRUD, **historik-tak (365) + checkpoint-rundtur** |
 | `core/__tests__/theme.test.ts` | Paletten är komplett, `onAccent` väljer rätt textfärg, **WCAG-golv**: text ≥ 7:1, muted/dim ≥ 4,5:1 på alla ytor, text-på-accent ≥ 3:1 |
 | `adapters/__tests__/audioSession.test.ts` | Audiosessionen: rätt `setAudioModeAsync`-läge, tyst loop, **statushändelser → ticks**, prenumerationen släpps vid `end()`, idempotens, `end()` under pågående `begin()`, trasig native-modul |
+| `ui/__tests__/systemBars.test.tsx` | **Immersivt läge**: Android gömmer navigationsfältet via `expo-navigation-bar` (och aldrig på iOS), tillståndet åsätts på nytt varje gång appen blir aktiv, statusfältet renderas dolt |
+| `ui/__tests__/typography.test.tsx` | **Typsnitt**: alla familjer temat kan be om är faktiskt laddade, varje variant har ett äkta kursivt snitt, och knappar i *alla* storlekar får det riktiga kursiva snittet i stället för en fejkad lutning |
 | `ui/__tests__/ErrorBoundary.test.tsx` | Fångar renderfel, visar svensk felsida, lämnar felet till `CrashReporter`, återhämtar sig på "Starta om" |
 | `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
+| `ui/__tests__/typography.web.test.tsx` | Renderar knappar till riktig CSS/HTML på webben och bekräftar att etiketten får det **äkta kursiva snittet** – aldrig `font-style: italic` (fejkad lutning) |
 | `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, instruktionsnivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
 
-126 tester, ~10 s, plus 5 webb-DOM-tester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+147 tester, ~25 s, plus 11 webbtester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 
@@ -533,6 +539,8 @@ Det som gör appen värd något – att rösten fortsätter räkna med skärmen 
 | F1 | Lång bakgrund | Lägg appen i bakgrunden (inte låst skärm – byt app) i 10 min | Vid återgång: ingen skur av repliker; coachen säger var ni är. Passtiden i summeringen exkluderar inte bakgrundstiden (den räknas som träning om ljudet fortsatte, som paus om OS:et frös JS). |
 | G1 | Tempo | Under ett rep-set tryck *Långsammare* två gånger | "Lugnare tempo." sägs direkt; nästa rep kommer märkbart senare; värdet visas som t.ex. `Tempo 1.2×`. Starta samma pass igen: övningen startar på 1.2×. |
 | H1 | Batteri | 30 min pass med skärm på (`Håll skärmen tänd`) | < 10 % batteri på moderna telefoner. Om mer: kontrollera att `TICK_MS` inte sänkts och att inga animationer körs i bakgrunden. |
+| I1 | Fullskärm | Öppna appen, titta på statusfält och navigationsfält | Båda är borta från första bildrutan (Android), och innehållet fyller hela skärmen. Dra in från underkanten: navigationsfältet kommer fram och försvinner sedan av sig självt. Samma sak uppifrån för statusfältet. Byt app och kom tillbaka: fälten är dolda igen. |
+| I2 | Knappar | Öppna biblioteket, detaljvyn och passet | Alla knappar – små som jättestora – har samma kursiva sportiga snitt (tidigare fick de minsta en fejkad lutning av det raka snittet). |
 
 **Så här felsöker du om A1/A2 fallerar**
 
@@ -551,7 +559,7 @@ Expo Go räcker för att klicka runt i UI:t, men **inte** för det appen egentli
 
 | Fil | Innehåll |
 |---|---|
-| `app.json` | `android.package: se.pulsecoach.app`, `versionCode: 1`, adaptiva ikoner, plugin `expo-audio` med `recordAudioAndroid: false` + `microphonePermission: false` (appen ber **aldrig** om mikrofon), plugin `expo-screen-orientation`. Resulterande Android-rättigheter: `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `VIBRATE` (+ RN:s standard `INTERNET`). |
+| `app.json` | `android.package: se.pulsecoach.app`, `versionCode: 1`, adaptiva ikoner, plugin `expo-audio` med `recordAudioAndroid: false` + `microphonePermission: false` (appen ber **aldrig** om mikrofon), plugin `expo-screen-orientation`, plugin `expo-navigation-bar` (`hidden: true`, `style: light`, `enforceContrast: false` – dolt navigationsfält utan grå slöja, redan innan JS hunnit starta). Resulterande Android-rättigheter: `MODIFY_AUDIO_SETTINGS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `VIBRATE` (+ RN:s standard `INTERNET`). |
 | `eas.json` | Profiler: **`preview`** (release-APK, intern distribution – *den du vill ha*), `development` (dev-client-APK), `production` (AAB för Play). |
 | `package.json` | `npm run android:apk` (prebuild + `assembleRelease`) och `npm run android:device` (bygg + installera via USB). |
 
@@ -650,6 +658,8 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
 - **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
 - **Blind paus via volymknapp** kräver en native-modul utanför Expo SDK (t.ex. `react-native-volume-manager`) – dubbeltryck är implementerat; skak-paus valdes bort eftersom burpees och jumping jacks skulle utlösa den.
 - **Android bakgrundsljud > några minuter** på telefoner med aggressiv batterihantering kan kräva `setActiveForLockScreen` (låsskärmskontroller + notis); se protokollet ovan. Android 17 skärper dessutom kraven på bakgrundsljud (foreground service krävs) – `expo-audio`:s `AudioControlsService` är redan deklarerad i manifestet via config-pluginen, så vägen dit är att aktivera låsskärmsläget, inte att bygga något nytt.
+- **Fullskärmsläge på iOS** – statusfältet göms, men hem-indikatorn (strecket längst ner) styrs av iOS och kan bara gömmas från native-kod (`prefersHomeIndicatorAutoHidden`), vilket skulle kräva en egen modul och ett nytt dev-client-bygge. Android får full immersivitet: navigationsfältet göms via `WindowInsetsControllerCompat` och kommer tillbaka när du drar in från kanten.
+- **Immersivt läge och gester** – på Android med skärmgestnavigation gäller standardbeteendet för dolda systemfält: första svepet från kanten visar fälten (och kan därmed "äta" den gesten), sedan fungerar tillbaka/hem som vanligt. Vill man slippa det helt krävs en egen native-modul.
 - **Kandidater för nästa iteration:** egna övningar, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret (utkasten är redan JSON), widgets/Live Activities för vilotimern.
 
 ---
@@ -667,9 +677,9 @@ src/
   core/                   ren TS: domain, engine, coach, intensity, metrics, utils
   content/                exercises, blocks, workouts
   data/                   repositories (types, local), storage (KeyValueStore, AsyncStorage)
-  adapters/               speech/ExpoSpeech + speechInstance, haptics, audio/audioSession, crash/crashReporter (+ __tests__)
+  adapters/               speech/ExpoSpeech + speechInstance, haptics, audio/audioSession, crash/crashReporter, systemUi/systemBars (+ __tests__)
   state/                  settingsStore, historyStore, customWorkoutStore, sessionStore
-  hooks/                  useI18n, useAppFonts
+  hooks/                  useI18n, useAppFonts, useImmersiveMode
   i18n/                   sv, en, format-hjälpare
   theme/                  tokens
   ui/                     primitives, components (WorkoutCard, ExerciseSheet, IntensityMeter, …)

@@ -98,7 +98,7 @@ export function Button({
       />
       <View style={styles.content}>
         {icon ? <View style={styles.icon}>{icon}</View> : null}
-        <Text variant={dims.font} color={fg} upper style={styles.label}>
+        <Text variant={dims.font} color={fg} upper italic>
           {label}
         </Text>
       </View>
@@ -118,6 +118,5 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   content: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   icon: { alignItems: 'center', justifyContent: 'center' },
-  label: { fontStyle: 'italic' },
   ghostBorder: { borderWidth: 1.5, borderColor: colors.borderStrong },
 });

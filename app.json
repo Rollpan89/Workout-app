@@ -63,7 +63,15 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      [
+        "expo-navigation-bar",
+        {
+          "hidden": true,
+          "style": "light",
+          "enforceContrast": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

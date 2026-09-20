@@ -12,6 +12,7 @@ import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors } from '@/theme';
 import { ErrorBoundary } from '@/ui/components/ErrorBoundary';
+import { SystemBars } from '@/ui/components/SystemBars';
 
 // Keep the native splash visible until fonts + persisted state are ready.
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -33,6 +34,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
+        {/* Immersive mode: no status bar / navigation bar, swipe to peek. */}
+        <SystemBars />
         <ErrorBoundary onReset={() => useSessionStore.getState().reset()}>
           <AppStack />
         </ErrorBoundary>
