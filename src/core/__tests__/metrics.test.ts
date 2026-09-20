@@ -12,7 +12,12 @@ import {
 } from '../metrics/metrics';
 import { lookup, plan } from '../testing/fixtures';
 
-const profile = { displayName: 'Test', bodyweightKg: 80, sex: 'unspecified' as const, goal: 'strength' as const };
+const profile = {
+  displayName: 'Test',
+  bodyweightKg: 80,
+  sex: 'unspecified' as const,
+  goal: 'strength' as const,
+};
 
 function snapshot(overrides: Partial<SessionSnapshot['stats']> = {}): SessionSnapshot {
   return {
@@ -27,6 +32,7 @@ function snapshot(overrides: Partial<SessionSnapshot['stats']> = {}): SessionSna
     restRemainingSeconds: 0,
     restTotalSeconds: 0,
     announceRemainingSeconds: 0,
+    countdownHeld: false,
     sessionElapsedSeconds: 60,
     startedAt: 1_000_000,
     stats: {
@@ -83,7 +89,9 @@ describe('computeSessionMetrics', () => {
   it('keeps the ratio between groups of the same exercise', () => {
     const m = computeSessionMetrics(
       snapshot({
-        completedSets: [{ stepIndex: 0, exerciseId: 'squat', reps: 10, seconds: 20, intensity: 1.0 }],
+        completedSets: [
+          { stepIndex: 0, exerciseId: 'squat', reps: 10, seconds: 20, intensity: 1.0 },
+        ],
       }),
       profile,
       lookup,
@@ -190,7 +198,15 @@ describe('compareWithPrevious', () => {
     estimatedCalories: 200,
     muscleImpact: {},
   };
-  const later: SessionLog = { ...base, id: 'b', endedAt: '2026-09-03T10:28:00.000Z', durationSeconds: 1680, totalReps: 112, estimatedCalories: 215, averageIntensity: 1.25 };
+  const later: SessionLog = {
+    ...base,
+    id: 'b',
+    endedAt: '2026-09-03T10:28:00.000Z',
+    durationSeconds: 1680,
+    totalReps: 112,
+    estimatedCalories: 215,
+    averageIntensity: 1.25,
+  };
 
   it('returns undefined for the first run of a workout', () => {
     expect(compareWithPrevious(base, [base])).toBeUndefined();
@@ -198,7 +214,13 @@ describe('compareWithPrevious', () => {
   });
 
   it('compares against the most recent earlier completed run of the same workout', () => {
-    const aborted: SessionLog = { ...base, id: 'x', endedAt: '2026-09-02T10:00:00.000Z', completed: false, totalReps: 5 };
+    const aborted: SessionLog = {
+      ...base,
+      id: 'x',
+      endedAt: '2026-09-02T10:00:00.000Z',
+      completed: false,
+      totalReps: 5,
+    };
     const cmp = compareWithPrevious(later, [later, aborted, base]);
     expect(cmp?.previous.id).toBe('a'); // the aborted one is skipped
     expect(cmp?.durationSeconds).toBe(-120);

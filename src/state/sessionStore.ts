@@ -6,7 +6,13 @@ import { applyVoiceSettings, getSpeech as getSharedSpeech } from '@/adapters/spe
 import { haptic } from '@/adapters/haptics/haptics';
 import { Coach } from '@/core/coach/Coach';
 import { SilentSpeech, type SpeechPort } from '@/core/coach/SpeechPort';
-import { tempoFactorFor, TEMPO_STEP, type InteractionLevel, type SessionLog, type Workout } from '@/core/domain';
+import {
+  tempoFactorFor,
+  TEMPO_STEP,
+  type InteractionLevel,
+  type SessionLog,
+  type Workout,
+} from '@/core/domain';
 import { buildSessionPlan } from '@/core/engine/planner';
 import { SessionEngine } from '@/core/engine/SessionEngine';
 import type { SessionCheckpoint, SessionPlan, SessionSnapshot } from '@/core/engine/types';
@@ -33,45 +39,18 @@ export interface StartSessionOptions {
   readonly resumeFrom?: SessionCheckpoint;
 }
 
-// --- 1. Metadata Store (Static/Slow data) ---
-
-interface SessionMetadataState {
+/** Session state exposed to the UI. */
+export interface SessionState {
   plan?: SessionPlan;
+  /** Latest engine snapshot – the 100 ms tick only touches this field. */
+  snapshot?: SessionSnapshot;
   result?: SessionLog;
   saving: boolean;
   pendingCheckpoint?: SessionCheckpoint;
-  setPlan: (plan: SessionPlan | undefined) => void;
-  setResult: (result: SessionLog | undefined) => void;
-  setSaving: (saving: boolean) => void;
-  setPendingCheckpoint: (cp: SessionCheckpoint | undefined) => void;
 }
 
-export const useSessionMetadataStore = create<SessionMetadataState>((set) => ({
-  plan: undefined,
-  result: undefined,
-  saving: false,
-  pendingCheckpoint: undefined,
-  setPlan: (plan) => set({ plan }),
-  setResult: (result) => set({ result }),
-  setSaving: (saving) => set({ saving }),
-  setPendingCheckpoint: (pendingCheckpoint) => set({ pendingCheckpoint }),
-}));
-
-// --- 2. Tick Store (High-frequency snapshot data) ---
-
-interface SessionTickState {
-  snapshot?: SessionSnapshot;
-  setSnapshot: (snapshot: SessionSnapshot) => void;
-}
-
-export const useSessionTickStore = create<SessionTickState>((set) => ({
-  snapshot: undefined,
-  setSnapshot: (snapshot) => set({ snapshot }),
-}));
-
-// --- 3. Main Store (Actions & Orchestration) ---
-
-interface SessionActions {
+/** Actions & orchestration. The live engine is kept outside React state. */
+export interface SessionActions {
   loadPendingCheckpoint: () => Promise<void>;
   discardPendingCheckpoint: () => void;
   start: (options: StartSessionOptions) => void;
@@ -88,6 +67,8 @@ interface SessionActions {
   stop: () => void;
   reset: () => void;
 }
+
+export type SessionStore = SessionState & SessionActions;
 
 /* Module-level runtime objects – deliberately kept out of React state. */
 let engine: SessionEngine | undefined;
@@ -151,7 +132,13 @@ function handleAppStateChange(next: AppStateStatus): void {
   }
 }
 
-export const useSessionStore = create<SessionActions>((set, get) => ({
+export const useSessionStore = create<SessionStore>()((set, get) => ({
+  plan: undefined,
+  snapshot: undefined,
+  result: undefined,
+  saving: false,
+  pendingCheckpoint: undefined,
+
   loadPendingCheckpoint: async () => {
     try {
       const cp = await getRepositories().sessions.loadCheckpoint();
@@ -161,7 +148,7 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
         clearCheckpoint();
         return;
       }
-      useSessionMetadataStore.getState().setPendingCheckpoint(cp);
+      set({ pendingCheckpoint: cp });
     } catch (error) {
       console.warn('[session] could not read checkpoint', error);
     }
@@ -169,7 +156,7 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
 
   discardPendingCheckpoint: () => {
     clearCheckpoint();
-    useSessionMetadataStore.getState().setPendingCheckpoint(undefined);
+    set({ pendingCheckpoint: undefined });
   },
 
   start: ({ workout, intensity, interactionLevel, tempoFactor, resumeFrom }) => {
@@ -178,20 +165,27 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
     const repos = getRepositories();
     const lookup = repos.workouts.exerciseLookup();
     const plan = buildSessionPlan(workout, lookup);
-    const sessionTempo = { tempoPreset: settings.tempoPreset, tempoOverrides: settings.tempoOverrides };
+    const sessionTempo = {
+      tempoPreset: settings.tempoPreset,
+      tempoOverrides: settings.tempoOverrides,
+    };
     const tempoFor = (exerciseId: string) =>
-      settings.tempoOverrides[exerciseId] ?? tempoFactor ?? tempoFactorFor(sessionTempo, exerciseId);
+      settings.tempoOverrides[exerciseId] ??
+      tempoFactor ??
+      tempoFactorFor(sessionTempo, exerciseId);
 
     engine = new SessionEngine({
       plan,
-      interactionLevel: resumeFrom?.interactionLevel ?? interactionLevel ?? settings.interactionLevel,
+      interactionLevel:
+        resumeFrom?.interactionLevel ?? interactionLevel ?? settings.interactionLevel,
       intensity: resumeFrom?.intensity ?? intensity ?? DEFAULT_INTENSITY,
       tempoFactor: plan.steps[0] ? tempoFor(plan.steps[0].exercise.id) : tempoFactor,
     });
 
     const applyExerciseTempo = (exerciseId: string) => {
       const wanted = tempoFor(exerciseId);
-      if (engine && Math.abs(engine.tempo - wanted) > 0.001) engine.setTempoFactor(wanted, { silent: true });
+      if (engine && Math.abs(engine.tempo - wanted) > 0.001)
+        engine.setTempoFactor(wanted, { silent: true });
     };
     engine.events.on('exerciseAnnounced', ({ step }) => applyExerciseTempo(step.exercise.id));
     engine.events.on('awaitingUser', ({ step }) => applyExerciseTempo(step.exercise.id));
@@ -218,7 +212,7 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
     });
 
     engine.events.on('snapshot', (snapshot) => {
-      useSessionTickStore.getState().setSnapshot(snapshot);
+      set({ snapshot });
       if (snapshot.phase !== 'idle' && snapshot.phase !== 'finished') writeCheckpoint();
     });
 
@@ -231,22 +225,16 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
       clearCheckpoint();
       const profile = useSettingsStore.getState().settings.profile;
       const log = buildSessionLog(plan, snapshot, completed, profile, lookup);
-      
-      useSessionMetadataStore.getState().setResult(log);
-      useSessionMetadataStore.getState().setSaving(true);
-      
+
+      set({ result: log, saving: true });
       useHistoryStore
         .getState()
         .add(log)
         .catch((error) => console.warn('[session] failed to save log', error))
-        .finally(() => useSessionMetadataStore.getState().setSaving(false));
+        .finally(() => set({ saving: false }));
     });
 
-    useSessionMetadataStore.getState().setPlan(plan);
-    useSessionMetadataStore.getState().setSnapshot(engine.snapshot); // Note: Snapshot might be undefined initially, we'll update via event
-    useSessionMetadataStore.getState().setResult(undefined);
-    useSessionMetadataStore.getState().setPendingCheckpoint(undefined);
-    useSessionTickStore.getState().setSnapshot(engine.snapshot);
+    set({ plan, snapshot: engine.snapshot, result: undefined, pendingCheckpoint: undefined });
 
     const startedEngine = engine;
     void getAudioSession().begin({
@@ -286,33 +274,12 @@ export const useSessionStore = create<SessionActions>((set, get) => ({
   stop: () => engine?.stop(),
 
   reset: () => {
-    const currentSnapshot = useSessionTickStore.getState().snapshot;
-    const currentPlan = useSessionMetadataStore.getState().plan;
-    const currentResult = useSessionMetadataStore.getState().result;
-    
+    const { snapshot: currentSnapshot, plan: currentPlan, result: currentResult } = get();
     const wasRunning = !!engine && !currentResult;
     teardownRuntime();
     if (wasRunning) clearCheckpoint();
     if (currentSnapshot || currentPlan) {
-      useSessionMetadataStore.getState().setPlan(undefined);
-      useSessionMetadataStore.getState().setSnapshot(undefined); // This is actually part of TickStore in logic, but for reset:
-      useSessionTickStore.getState().setSnapshot(undefined);
-      useSessionMetadataStore.getState().setResult(undefined);
-      useSessionMetadataStore.getState().setSaving(false);
+      set({ plan: undefined, snapshot: undefined, result: undefined, saving: false });
     }
   },
 }));
-
-// --- Helpers for UI components ---
-
-export const selectSnapshot = (s: any) => s.snapshot; // If used with useSessionTickStore
-// To maintain backward compatibility with components using useSessionStore(selectSnapshot):
-export const selectSnapshotLegacy = (s: any) => useSessionTickStore.getState().snapshot;
-
-export const selectIsActive = () => {
-  const snap = useSessionTickStore.getState().snapshot;
-  return !!snap && snap.phase !== 'idle' && snap.phase !== 'finished';
-};
-
-// Compatibility exports for components that haven't been updated yet
-export { useSessionMetadataStore, useSessionTickStore };
