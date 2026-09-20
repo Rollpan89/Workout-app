@@ -133,9 +133,13 @@ export const fonts = {
   heading: 'BarlowCondensed_700Bold_Italic',
   headingUpright: 'BarlowCondensed_700Bold',
   subheading: 'BarlowCondensed_600SemiBold',
+  subheadingItalic: 'BarlowCondensed_600SemiBold_Italic',
   body: 'Barlow_400Regular',
+  bodyItalic: 'Barlow_400Regular_Italic',
   bodyMedium: 'Barlow_500Medium',
+  bodyMediumItalic: 'Barlow_500Medium_Italic',
   bodyBold: 'Barlow_700Bold',
+  bodyBoldItalic: 'Barlow_700Bold_Italic',
   mono: 'BarlowCondensed_600SemiBold',
 } as const;
 
@@ -151,6 +155,31 @@ export const typography = {
   bodySmall: { fontFamily: fonts.body, fontSize: 14, lineHeight: 19 },
   bodyBold: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 22 },
   stat: { fontFamily: fonts.displayUpright, fontSize: 34, lineHeight: 36 },
+} as const;
+
+/**
+ * The *real* italic face for every typography variant.
+ *
+ * Do not fake italics with `fontStyle: 'italic'`: the platform then skews the
+ * upright cut (a synthesised oblique that looks wrong, especially in the
+ * condensed display faces) and – worse – paddings and letter forms differ from
+ * the true italic. Every variant here points at a font file that is actually
+ * loaded by `useAppFonts` (see the regression test in `ui/__tests__`).
+ */
+export const italicFonts: Record<keyof typeof typography, string> = {
+  // These are already italic cuts – the companion is the face itself.
+  hero: fonts.display,
+  mega: fonts.display,
+  h1: fonts.display,
+  h2: fonts.heading,
+  h3: fonts.heading,
+  // Upright cuts get their matching italic file.
+  label: fonts.subheadingItalic,
+  labelSmall: fonts.subheadingItalic,
+  body: fonts.bodyItalic,
+  bodySmall: fonts.bodyItalic,
+  bodyBold: fonts.bodyBoldItalic,
+  stat: fonts.display,
 } as const;
 
 export const shadows = {

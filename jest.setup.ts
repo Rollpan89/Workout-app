@@ -50,6 +50,18 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
+jest.mock('expo-navigation-bar', () => {
+  const setHidden = jest.fn();
+  const setStyle = jest.fn();
+  return {
+    setHidden,
+    setStyle,
+    setVisibilityAsync: jest.fn(() => Promise.resolve()),
+    getVisibilityAsync: jest.fn(() => Promise.resolve('visible')),
+    NavigationBar: Object.assign(() => null, { setHidden, setStyle }),
+  };
+});
+
 jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(() => Promise.resolve()),
   deactivateKeepAwake: jest.fn(() => Promise.resolve()),
