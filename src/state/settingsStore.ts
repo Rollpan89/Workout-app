@@ -23,6 +23,8 @@ interface SettingsState {
   setKeepScreenAwake: (value: boolean) => void;
   setCrashReports: (value: boolean) => void;
   setOnboardingDone: () => void;
+  /** Reveal the admin tools for editing built-in workouts. */
+  setAdminMode: (value: boolean) => void;
   setTempoPreset: (preset: TempoPreset) => void;
   /** Remember the tempo the user settled on for an exercise (undefined = forget). */
   setTempoOverride: (exerciseId: string, factor: number | undefined) => void;
@@ -67,6 +69,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       update((s) => ({ ...s, crashReports }));
     },
     setOnboardingDone: () => update((s) => ({ ...s, onboardingDone: true })),
+    setAdminMode: (adminMode) => update((s) => ({ ...s, adminMode })),
     setTempoPreset: (tempoPreset) => update((s) => ({ ...s, tempoPreset })),
     setTempoOverride: (exerciseId, factor) =>
       update((s) => {

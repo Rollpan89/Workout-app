@@ -41,6 +41,18 @@ export interface CustomWorkoutDraft {
   readonly sourceId?: string;
 }
 
+/**
+ * A built-in workout that the user (in admin mode) has replaced with their
+ * own version. The draft carries the *built-in id* so the compiled workout
+ * takes its place everywhere the app looks a workout up by id.
+ */
+export interface WorkoutOverride {
+  readonly workoutId: string;
+  readonly draft: CustomWorkoutDraft;
+  /** ISO timestamp for the last edit. */
+  readonly updatedAt: string;
+}
+
 export const DRAFT_LIMITS = {
   nameMax: 40,
   sets: { min: 1, max: 10 },

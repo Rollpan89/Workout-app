@@ -5,5 +5,6 @@ export * from './InteractionPicker';
 export * from './StatTile';
 export * from './SystemBars';
 export * from './ExerciseSheet';
+export { DeleteButton } from './DeleteButton';
 export { ComparisonRow } from './ComparisonRow';
 export { ErrorBoundary } from './ErrorBoundary';

@@ -95,6 +95,8 @@ function AppStack() {
       <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="history/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="builder/[id]" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="import" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="admin/index" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade' }} />
       <Stack.Screen name="summary" options={{ gestureEnabled: false, animation: 'fade' }} />
     </Stack>

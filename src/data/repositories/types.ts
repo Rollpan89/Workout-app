@@ -1,4 +1,4 @@
-import type { AppSettings, CustomWorkoutDraft, Exercise, SessionLog, Workout } from '@/core/domain';
+import type { AppSettings, CustomWorkoutDraft, Exercise, SessionLog, Workout, WorkoutOverride } from '@/core/domain';
 import type { SessionCheckpoint } from '@/core/engine/types';
 
 /**
@@ -25,6 +25,10 @@ export interface CustomWorkoutRepository {
   getDraft(id: string): Promise<CustomWorkoutDraft | undefined>;
   saveDraft(draft: CustomWorkoutDraft): Promise<void>;
   deleteDraft(id: string): Promise<void>;
+  /** Admin: user-made versions of the built-in workouts, keyed by workout id. */
+  listOverrides(): Promise<readonly WorkoutOverride[]>;
+  saveOverride(override: WorkoutOverride): Promise<void>;
+  deleteOverride(workoutId: string): Promise<void>;
 }
 
 export interface SessionRepository {

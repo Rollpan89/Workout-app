@@ -4,3 +4,4 @@ export * from './workout';
 export * from './session';
 export * from './settings';
 export * from './customWorkout';
+export * from './shareCode';

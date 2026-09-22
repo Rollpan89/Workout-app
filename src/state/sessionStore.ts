@@ -80,6 +80,8 @@ let appStateSub: NativeEventSubscription | undefined;
 let lastAppState: AppStateStatus = AppState.currentState ?? 'active';
 let lastCheckpointAt = 0;
 let checkpointKey: string | undefined;
+/** Delayed audio teardown of a finished session – cancelled if a new one starts. */
+let audioEndTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Write on every step/phase change, otherwise at most every CHECKPOINT_MS. */
 function writeCheckpoint(force = false): void {
@@ -160,6 +162,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   start: ({ workout, intensity, interactionLevel, tempoFactor, resumeFrom }) => {
+    // A session that just ended schedules its audio teardown a few seconds
+    // later (so the finish line is heard); starting a new one cancels it.
+    if (audioEndTimer) clearTimeout(audioEndTimer);
+    audioEndTimer = undefined;
     teardownRuntime();
     const settings = useSettingsStore.getState().settings;
     const repos = getRepositories();
@@ -221,7 +227,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       timer = undefined;
       appStateSub?.remove();
       appStateSub = undefined;
-      setTimeout(() => void getAudioSession().end(), 4000);
+      if (audioEndTimer) clearTimeout(audioEndTimer);
+      audioEndTimer = setTimeout(() => {
+        audioEndTimer = undefined;
+        void getAudioSession().end();
+      }, 4000);
       clearCheckpoint();
       const profile = useSettingsStore.getState().settings.profile;
       const log = buildSessionLog(plan, snapshot, completed, profile, lookup);

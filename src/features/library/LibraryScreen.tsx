@@ -2,11 +2,11 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
-import { getExercise, WORKOUTS } from '@/content';
+import { getExercise } from '@/content';
 import type { Workout, WorkoutGoal } from '@/core/domain';
 import { summarizeHistory } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
-import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
+import { useBuiltInWorkouts, useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { useHistoryStore } from '@/state/historyStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
@@ -15,6 +15,8 @@ import { WorkoutCard } from '@/ui/components';
 import { Button, Chip, Screen, SectionTitle, SlantBox, Text } from '@/ui/primitives';
 
 import { OnboardingOverlay } from '../onboarding/OnboardingOverlay';
+import { ActiveSessionBanner } from '../session/ActiveSessionBanner';
+import { ShareWorkoutModal } from '../share/ShareWorkoutModal';
 import { ResumeBanner } from './ResumeBanner';
 
 const GOALS: readonly WorkoutGoal[] = ['strength', 'hypertrophy', 'endurance', 'fatLoss', 'mobility'];
@@ -24,8 +26,10 @@ export function LibraryScreen() {
   const { t, f, lz } = useI18n();
   const [goal, setGoal] = useState<WorkoutGoal | 'all'>('all');
   const [query, setQuery] = useState('');
+  const [sharing, setSharing] = useState<Workout | undefined>();
   const displayName = useSettingsStore((s) => s.settings.profile.displayName);
   const logs = useHistoryStore((s) => s.logs);
+  const builtIn = useBuiltInWorkouts();
   const customWorkouts = useCustomWorkoutStore((s) => s.workouts);
   const removeCustom = useCustomWorkoutStore((s) => s.remove);
   const summary = useMemo(() => summarizeHistory(logs), [logs]);
@@ -37,11 +41,12 @@ export function LibraryScreen() {
     return (list: readonly Workout[]) =>
       list.filter((w) => (goal === 'all' || w.goal === goal) && (q === '' || matchesQuery(w, q, locale, lz)));
   }, [goal, query, locale, lz]);
-  const workouts = useMemo(() => filter(WORKOUTS), [filter]);
+  const workouts = useMemo(() => filter(builtIn), [filter, builtIn]);
   const mine = useMemo(() => filter(customWorkouts), [filter, customWorkouts]);
 
   const open = (workout: Workout) => router.push({ pathname: '/workout/[id]', params: { id: workout.id } });
   const createNew = () => router.push({ pathname: '/builder/[id]', params: { id: 'new' } });
+  const importWorkout = () => router.push('/import');
   const editCustom = (workout: Workout) => router.push({ pathname: '/builder/[id]', params: { id: workout.id } });
   const deleteCustom = (workout: Workout) => void removeCustom(workout.id);
 
@@ -61,6 +66,7 @@ export function LibraryScreen() {
         </Text>
       </View>
 
+      <ActiveSessionBanner />
       {pendingCheckpoint ? <ResumeBanner checkpoint={pendingCheckpoint} /> : null}
 
       {summary.sessions > 0 ? (
@@ -112,7 +118,14 @@ export function LibraryScreen() {
         <>
           <SectionTitle title={t.builder.mySection} hint={f(t.builder.customCount, { count: mine.length })} />
           {mine.map((w) => (
-            <WorkoutCard key={w.id} workout={w} onPress={open} onEdit={editCustom} onDelete={deleteCustom} />
+            <WorkoutCard
+              key={w.id}
+              workout={w}
+              onPress={open}
+              onEdit={editCustom}
+              onDelete={deleteCustom}
+              onShare={setSharing}
+            />
           ))}
           <SectionTitle title={t.builder.builtInSection} style={styles.sectionGap} />
         </>
@@ -135,6 +148,17 @@ export function LibraryScreen() {
         style={styles.createButton}
         testID="create-workout"
       />
+      <Button
+        label={t.share.openCta}
+        variant="ghost"
+        size="md"
+        fullWidth
+        onPress={importWorkout}
+        style={styles.importButton}
+        testID="import-workout"
+      />
+
+      <ShareWorkoutModal workout={sharing} onClose={() => setSharing(undefined)} />
     </Screen>
   );
 }
@@ -182,4 +206,5 @@ const styles = StyleSheet.create({
   empty: { marginTop: spacing.xl, textAlign: 'center' },
   sectionGap: { marginTop: spacing.md },
   createButton: { marginTop: spacing.md },
+  importButton: { marginTop: spacing.sm },
 });

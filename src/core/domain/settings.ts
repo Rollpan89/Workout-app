@@ -96,6 +96,12 @@ export interface AppSettings {
   readonly crashReports: boolean;
   /** First-run intro has been completed or skipped. */
   readonly onboardingDone: boolean;
+  /**
+   * Admin mode – reveals the tools for editing the workouts that ship with
+   * the app (see `WorkoutOverride`). Off by default; it is an authoring aid,
+   * not part of the normal athlete flow.
+   */
+  readonly adminMode: boolean;
   /** Default rep tempo for new sessions. */
   readonly tempoPreset: TempoPreset;
   /**
@@ -135,6 +141,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepScreenAwake: true,
   crashReports: false,
   onboardingDone: false,
+  adminMode: false,
   tempoPreset: 'normal',
   tempoOverrides: {},
 };

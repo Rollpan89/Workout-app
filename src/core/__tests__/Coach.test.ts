@@ -1,4 +1,5 @@
 import { Coach } from '../coach/Coach';
+import { restDurationText } from '../coach/script';
 import { SilentSpeech, type SpeechPort, type SpeechUtterance } from '../coach/SpeechPort';
 import { DEFAULT_SETTINGS, lz, type Exercise, type Workout, type WorkoutBlock } from '../domain';
 import type { InteractionLevel } from '../domain/settings';
@@ -79,6 +80,21 @@ const WORKOUT_SLOW: Workout = {
 };
 
 const slowLookup = (id: string) => [EX_SLOW_SQUAT, EX_PLANK].find((e) => e.id === id);
+
+/** A squat workout whose rest is `seconds` long – for the rest-speech tests. */
+function restWorkout(seconds: number): Workout {
+  return {
+    ...WORKOUT_SLOW,
+    id: `rest-${seconds}`,
+    blocks: [
+      {
+        ...BLOCK_SLOW,
+        restSeconds: seconds,
+        exercises: [{ exerciseId: 'slow-squat', sets: 2, prescription: { kind: 'reps', reps: 5 } }],
+      },
+    ],
+  };
+}
 
 /** Plank with a key cue and how-to step for pre-countdown guidance tests. */
 const EX_PLANK_CUED: Exercise = {
@@ -193,7 +209,7 @@ describe('Coach – counting', () => {
     run(3_000 + 10_000 + 9_900); // countdown, set 1, most of the rest
     speech.spoken.length = 0;
     run(200); // rest ends → set 2 starts straight away (no re-announce in hands-free)
-    expect(texts().slice(0, 3)).toEqual(['Set 2 av 2.', 'Sista setet. Ge allt!', 'Kör!']);
+    expect(texts().slice(0, 3)).toEqual(['Okej, vilan är över. Set 2 av 2.', 'Sista setet. Ge allt!', 'Kör!']);
   });
 });
 
@@ -369,7 +385,9 @@ describe('Coach – rest and transitions', () => {
     engine.start();
     run(3_000 + 10_000 + 10_000 + 10_000 + 20_000); // transition rest ends → plank is introduced
     const announcement = texts().at(-1);
-    expect(announcement).toBe('Sista övningen. Nu avslutar vi starkt. Nästa: Planka. 10 sekunder. Spänn magen.');
+    expect(announcement).toBe(
+      'Okej, vilan är över. Sista övningen. Nu avslutar vi starkt. Nästa: Planka. 10 sekunder. Spänn magen.',
+    );
     // The instruction is spoken as part of the announcement, before the next
     // engine tick can emit 3-2-1.
     expect(speech.spoken.at(-1)?.priority).toBe('interrupt');
@@ -403,13 +421,45 @@ describe('Coach – rest and transitions', () => {
     expect(texts().some((line) => line.includes('Sista övningen. Nu avslutar vi starkt.'))).toBe(true);
   });
 
-  it('says "get ready" three seconds before a rest ends', () => {
+  it('never counts a rest down – one line at the start, one when it is over', () => {
     const { engine, texts, run, speech } = setup();
     engine.start();
     run(3_000 + 10_000); // into rest (10 s)
+    expect(texts()).toContain('Vila 10 sekunder.');
     speech.spoken.length = 0;
-    run(9_000);
-    expect(texts()).toEqual(['Gör dig redo.', 'två', 'ett']);
+    run(9_900); // the whole rest, second by second
+    expect(texts()).toEqual([]); // silence: no numbers, no "get ready"
+    run(400); // rest ends
+    expect(texts().join(' ')).toMatch(/^Okej, vilan är över\./);
+  });
+
+  it('says whole minutes as minutes and 90 s as one and a half minutes', () => {
+    expect(restDurationText(30, 'sv')).toBe('30 sekunder');
+    expect(restDurationText(60, 'sv')).toBe('en minut');
+    expect(restDurationText(90, 'sv')).toBe('en och en halv minut');
+    expect(restDurationText(120, 'sv')).toBe('två minuter');
+    expect(restDurationText(180, 'sv')).toBe('tre minuter');
+    expect(restDurationText(150, 'sv')).toBe('150 sekunder');
+
+    expect(restDurationText(45, 'en')).toBe('45 seconds');
+    expect(restDurationText(60, 'en')).toBe('one minute');
+    expect(restDurationText(90, 'en')).toBe('one and a half minutes');
+    expect(restDurationText(120, 'en')).toBe('two minutes');
+
+    // A 90 s rest in a real session: the line is spoken once, at the start.
+    const { engine, texts, run } = setup({ workout: restWorkout(90), lookup: slowLookup });
+    engine.start();
+    run(3_000 + 15_000 + 1_000); // countdown + 5 reps @ 3 s → rest starts
+    expect(texts()).toContain('Vila en och en halv minut.');
+  });
+
+  it('speaks the English rest lines in English', () => {
+    const { engine, texts, run } = setup({ locale: 'en', workout: restWorkout(60), lookup: slowLookup });
+    engine.start();
+    run(3_000 + 15_000 + 1_000); // countdown + 5 reps @ 3 s → rest starts
+    expect(texts()).toContain('Rest for one minute.');
+    run(60_000);
+    expect(texts().join(' ')).toContain('Alright, rest over.');
   });
 });
 

@@ -13,6 +13,7 @@ import {
   stepIntensity,
   type IntensityLevel,
 } from '@/core/intensity/intensity';
+import { useActiveSession } from '@/hooks/useActiveSession';
 import { useI18n } from '@/hooks/useI18n';
 import { useCustomWorkoutStore, useWorkout } from '@/state/customWorkoutStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -20,6 +21,9 @@ import { useSettingsStore } from '@/state/settingsStore';
 import { accent, colors, spacing } from '@/theme';
 import { ExerciseSheet, IntensityMeter, InteractionPicker } from '@/ui/components';
 import { Button, Card, Chip, Screen, SectionTitle, Text } from '@/ui/primitives';
+
+import { ActiveSessionBanner } from '../session/ActiveSessionBanner';
+import { ShareWorkoutModal } from '../share/ShareWorkoutModal';
 
 const READINESS: readonly ReadinessLevel[] = ['low', 'normal', 'high'];
 
@@ -33,6 +37,11 @@ export function WorkoutDetailScreen() {
 
   const workout = useWorkout(id);
   const removeCustom = useCustomWorkoutStore((s) => s.remove);
+  const adminMode = useSettingsStore((s) => s.settings.adminMode);
+  const active = useActiveSession();
+  const stopSession = useSessionStore((s) => s.stop);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [confirmingStart, setConfirmingStart] = useState(false);
   const [readiness, setReadiness] = useState<ReadinessLevel>('normal');
   const [intensity, setIntensity] = useState<IntensityLevel>(intensityForReadiness('normal'));
   const [interaction, setInteraction] = useState<InteractionLevel>(defaultInteraction);
@@ -65,6 +74,31 @@ export function WorkoutDetailScreen() {
     startSession({ workout, intensity, interactionLevel: interaction, tempoFactor: TEMPO_PRESET_FACTOR[tempo] });
     router.replace('/session');
   };
+
+  /** A running session is never thrown away silently. */
+  const startNew = () => {
+    if (!active.active) {
+      start();
+      return;
+    }
+    if (Platform.OS === 'web') {
+      setConfirmingStart(true);
+      return;
+    }
+    Alert.alert(t.activeSession.title, t.activeSession.startNewConfirm, [
+      { text: t.common.cancel, style: 'cancel' },
+      {
+        text: t.common.yes,
+        style: 'destructive',
+        onPress: () => {
+          stopSession();
+          start();
+        },
+      },
+    ]);
+  };
+
+  const adminEdit = () => router.push({ pathname: '/builder/[id]', params: { id: 'new', override: workout.id } });
 
   const copyAndCustomise = () => {
     // The builder creates the draft itself so the accent rotation stays in one place.
@@ -113,12 +147,24 @@ export function WorkoutDetailScreen() {
           <Fact value={`${workout.blocks.length}`} label={t.detail.overview} />
         </View>
 
+        <ActiveSessionBanner />
+
         <View style={styles.manageRow}>
           {workout.custom ? (
             <>
               <Button label={t.builder.edit} variant="secondary" size="sm" onPress={edit} testID="edit-workout" />
+              <Button label={t.share.cta} variant="ghost" size="sm" onPress={() => setShareOpen(true)} testID="share-workout" />
               <Button label={t.builder.delete} variant="ghost" size="sm" onPress={askDelete} testID="delete-workout" />
             </>
+          ) : null}
+          {!workout.custom && adminMode ? (
+            <Button
+              label={`${t.admin.section} · ${t.admin.edit}`}
+              variant="ghost"
+              size="sm"
+              onPress={adminEdit}
+              testID="admin-edit-workout"
+            />
           ) : null}
           <Button label={t.builder.duplicateCta} variant="ghost" size="sm" onPress={copyAndCustomise} testID="duplicate-workout" />
         </View>
@@ -249,8 +295,50 @@ export function WorkoutDetailScreen() {
     </Screen>
 
       <View style={[styles.cta, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button label={t.detail.startWorkout} size="xl" fullWidth color={tone.main} onPress={start} testID="start-workout" />
+        {confirmingStart ? (
+          <View style={styles.confirmRow}>
+            <Text variant="bodySmall" color={colors.textMuted} style={styles.confirmText}>
+              {t.activeSession.startNewConfirm}
+            </Text>
+            <Button label={t.common.no} variant="secondary" size="sm" onPress={() => setConfirmingStart(false)} />
+            <Button
+              label={t.common.yes}
+              variant="danger"
+              size="sm"
+              onPress={() => {
+                setConfirmingStart(false);
+                stopSession();
+                start();
+              }}
+              testID="confirm-start-new"
+            />
+          </View>
+        ) : active.active ? (
+          <>
+            <Button
+              label={t.activeSession.cta}
+              size="xl"
+              fullWidth
+              color={colors.orange}
+              onPress={() => router.push('/session')}
+              testID="return-to-session"
+            />
+            <Button
+              label={t.activeSession.startNew}
+              variant="ghost"
+              size="md"
+              fullWidth
+              onPress={startNew}
+              style={styles.startNew}
+              testID="start-workout"
+            />
+          </>
+        ) : (
+          <Button label={t.detail.startWorkout} size="xl" fullWidth color={tone.main} onPress={start} testID="start-workout" />
+        )}
       </View>
+
+      <ShareWorkoutModal workout={shareOpen ? workout : undefined} onClose={() => setShareOpen(false)} />
     </View>
   );
 }
@@ -305,6 +393,7 @@ const styles = StyleSheet.create({
   chevron: { marginLeft: spacing.xs },
   exerciseName: { flex: 1, gap: 2 },
   exerciseValue: { alignItems: 'flex-end', gap: 2 },
+  startNew: { marginTop: spacing.sm },
   cta: {
     position: 'absolute',
     left: 0,
