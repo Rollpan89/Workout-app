@@ -47,6 +47,11 @@ const MOTIVATION_COOLDOWN_MS = 40_000;
  * Time-based holds get periodic hold cues and breathing reminders instead.
  * The tempo word is scheduled on the engine clock (via `snapshot` ticks), so
  * it stays deterministic and pauses with the session.
+ *
+ * Rests are deliberately *not* counted down: one line when the rest starts
+ * ("Vila en och en halv minut.") and one when it ends ("Okej, vilan är över.").
+ * The end line is merged into the next instruction, so a countdown that
+ * starts right after the rest can never cut it off.
  */
 export class Coach {
   private speech: SpeechPort;
@@ -71,6 +76,13 @@ export class Coach {
   private announcedNextId?: string;
   /** Releases an announcement-held countdown once speech has completed. */
   private releaseCountdown?: () => void;
+  /**
+   * A rest just ended: the "rest over" line is merged into whatever the
+   * coach says next (announcement / set start / tap prompt) so that it is
+   * always heard – a separate utterance would be interrupted by the
+   * countdown that follows it by a few milliseconds.
+   */
+  private restOverPending = false;
 
   constructor(options: CoachOptions) {
     this.speech = options.speech;
@@ -125,6 +137,10 @@ export class Coach {
           lines.push(this.pendingGreeting);
           this.pendingGreeting = undefined;
         }
+        if (this.restOverPending) {
+          lines.push(this.script.restOver);
+          this.restOverPending = false;
+        }
         if (isNewBlock) lines.push(this.script.blockStart(resolveLocalized(step.block.title, this.locale)));
         if (isNewRound && step.rounds > 1) lines.push(this.script.roundOf(step.round, step.rounds));
         if (this.isLastExercise(step) && this.planSteps.length > 1) lines.push(this.script.lastExercise);
@@ -141,12 +157,13 @@ export class Coach {
       }),
 
       events.on('awaitingUser', ({ step }) => {
+        const prefix = this.takeRestOver();
         if (step.totalSets > 1) {
-          this.say(this.script.setOf(step.setNumber, step.totalSets), 'interrupt');
+          this.say(`${prefix}${this.script.setOf(step.setNumber, step.totalSets)}`, 'interrupt');
           if (step.setNumber === step.totalSets) this.say(this.script.lastSet, 'queue');
           this.say(this.script.tapWhenReady, 'queue');
         } else {
-          this.say(this.script.tapWhenReady, 'interrupt');
+          this.say(`${prefix}${this.script.tapWhenReady}`, 'interrupt');
         }
       }),
 
@@ -156,14 +173,15 @@ export class Coach {
         this.techniqueCueIndex = -1;
         const isLastSet = step.totalSets > 1 && step.setNumber === step.totalSets;
         const announcedAlready = engine.snapshot.interactionLevel !== 'handsFree' || step.setNumber === 1;
+        const prefix = this.takeRestOver();
 
         if (!announcedAlready) {
           // Hands-free, set 2+: the engine skips the announcement, so we say it here.
-          this.say(this.script.setOf(step.setNumber, step.totalSets), 'interrupt');
+          this.say(`${prefix}${this.script.setOf(step.setNumber, step.totalSets)}`, 'interrupt');
           if (isLastSet) this.say(this.script.lastSet, 'queue');
           this.say(this.script.go, 'queue');
         } else {
-          this.say(this.script.go, 'interrupt');
+          this.say(`${prefix}${this.script.go}`, 'interrupt');
         }
         if (target.kind === 'time' && target.seconds >= 20) this.say(this.script.breatheIn, 'drop');
       }),
@@ -274,18 +292,12 @@ export class Coach {
         else this.maybeMotivate(engine.snapshot.sessionElapsedSeconds);
       }),
 
-      events.on('restTick', ({ remaining, total }) => {
-        if (remaining === 3 && total > 5) {
-          this.say(this.script.restEnding, 'interrupt');
-          return;
-        }
-        if (remaining <= 2 && remaining >= 1) {
-          this.say(spokenNumber(this.script, remaining), 'interrupt');
-          return;
-        }
-        if (remaining === 10 && total >= 30) {
-          this.say(this.script.timeLeft(10), 'drop');
-        }
+      // NB: a rest is deliberately silent while it runs – no countdown, no
+      // numbers. The user gets one line when it starts and one when it ends
+      // (see `restOver`, which is spoken together with the next instruction
+      // so an interrupting announcement can never cut it off).
+      events.on('restEnded', () => {
+        this.restOverPending = true;
       }),
 
       events.on('intensityChanged', ({ from, to }) => {
@@ -340,6 +352,7 @@ export class Coach {
       events.on('finished', ({ completed }) => {
         this.haptic?.('done');
         this.pendingTempo = undefined;
+        this.restOverPending = false; // the finish line stands on its own
         if (!completed) {
           this.say(this.script.aborted, 'interrupt');
           return;
@@ -349,8 +362,16 @@ export class Coach {
     );
   }
 
+  /** "Okej, vilan är över. " (with a trailing space) or an empty string. */
+  private takeRestOver(): string {
+    if (!this.restOverPending) return '';
+    this.restOverPending = false;
+    return `${this.script.restOver} `;
+  }
+
   detach(): void {
     this.releasePendingCountdown();
+    this.restOverPending = false;
     this.subscriptions.forEach((unsub) => unsub());
     this.subscriptions = [];
     this.pendingTempo = undefined;

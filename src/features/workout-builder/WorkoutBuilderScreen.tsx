@@ -44,10 +44,16 @@ const ERROR_KEY: Record<DraftValidationError, 'errorNameRequired' | 'errorNoExer
  *   id = "new"          → empty draft
  *   id = <custom id>    → edit existing draft
  *   id = "new" + from=<workout id> → copy of that workout (built-in or custom)
+ *   id = "new" + override=<built-in id> → admin: edit that program in place
  *   optional name=<prefilled name>
  */
 export function WorkoutBuilderScreen() {
-  const { id, from, name: prefillName } = useLocalSearchParams<{ id: string; from?: string; name?: string }>();
+  const {
+    id,
+    from,
+    name: prefillName,
+    override,
+  } = useLocalSearchParams<{ id: string; from?: string; name?: string; override?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t, f, lz } = useI18n();
@@ -56,6 +62,7 @@ export function WorkoutBuilderScreen() {
   // The store is hydrated before any screen mounts (see app/_layout), so the
   // initial draft can be derived once, synchronously.
   const [draft, setDraft] = useState<CustomWorkoutDraft | undefined>(() => {
+    if (override) return store.overrideDraft(override) ?? store.newDraft();
     if (id && id !== 'new') return store.getDraft(id);
     if (from) {
       const source = getWorkout(from) ?? store.workouts.find((w) => w.id === from);
@@ -69,7 +76,8 @@ export function WorkoutBuilderScreen() {
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const isEditing = !!id && id !== 'new';
+  const isEditing = !!id && id !== 'new' && !override;
+  const isOverride = !!override && store.isOverridden(override);
   const tone = accent[draft?.accent ?? 'red'];
   const minutes = useMemo(() => (draft ? estimateDraftMinutes(draft, getExercise) : 0), [draft]);
 
@@ -105,14 +113,20 @@ export function WorkoutBuilderScreen() {
       return;
     }
     setSaving(true);
-    const workout = await store.save(draft);
+    const workout = override ? await store.saveOverride(override, draft) : await store.save(draft);
     setSaving(false);
-    router.replace({ pathname: '/workout/[id]', params: { id: workout.id } });
+    if (workout) router.replace({ pathname: '/workout/[id]', params: { id: workout.id } });
   };
 
   const doDelete = async () => {
     if (!draft) return;
     setConfirmingDelete(false);
+    if (override) {
+      // Admin: drop the edit and go back to the shipped program.
+      await store.removeOverride(override);
+      router.replace({ pathname: '/workout/[id]', params: { id: override } });
+      return;
+    }
     await store.remove(draft.id);
     router.dismissTo('/');
   };
@@ -143,12 +157,13 @@ export function WorkoutBuilderScreen() {
       <View style={styles.topBar}>
         <Button label={`‹ ${t.common.cancel}`} variant="ghost" size="sm" onPress={() => router.back()} testID="builder-cancel" />
         {isEditing ? <Button label={t.builder.delete} variant="ghost" size="sm" onPress={askDelete} testID="builder-delete" /> : null}
+        {isOverride ? <Button label={t.admin.reset} variant="ghost" size="sm" onPress={askDelete} testID="builder-reset-override" /> : null}
       </View>
 
       {confirmingDelete ? (
         <View style={styles.confirmRow}>
           <Text variant="bodySmall" color={colors.textMuted} style={styles.confirmText}>
-            {t.builder.deleteConfirm}
+            {override ? t.admin.resetConfirm : t.builder.deleteConfirm}
           </Text>
           <Button label={t.common.no} variant="secondary" size="sm" onPress={() => setConfirmingDelete(false)} />
           <Button label={t.common.yes} variant="danger" size="sm" onPress={() => void doDelete()} testID="builder-confirm-delete" />
@@ -156,8 +171,13 @@ export function WorkoutBuilderScreen() {
       ) : null}
 
       <Text variant="label" color={tone.main} upper>
-        {isEditing ? t.builder.editTitle : t.builder.newTitle}
+        {override ? t.admin.editingTitle : isEditing ? t.builder.editTitle : t.builder.newTitle}
       </Text>
+      {override ? (
+        <Text variant="bodySmall" color={colors.textMuted} style={styles.hint} testID="builder-override-hint">
+          {t.admin.editingHint}
+        </Text>
+      ) : null}
       <TextInput
         value={draft.name}
         onChangeText={(name) => update({ name: name.slice(0, DRAFT_LIMITS.nameMax) })}
@@ -284,7 +304,15 @@ export function WorkoutBuilderScreen() {
       ) : null}
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button label={t.builder.save} size="xl" fullWidth color={tone.main} onPress={() => void save()} disabled={saving} testID="builder-save" />
+        <Button
+          label={override ? t.admin.save : t.builder.save}
+          size="xl"
+          fullWidth
+          color={tone.main}
+          onPress={() => void save()}
+          disabled={saving}
+          testID="builder-save"
+        />
       </View>
 
       <ExercisePicker visible={pickerOpen} color={tone.main} onPick={addExercise} onClose={() => setPickerOpen(false)} />

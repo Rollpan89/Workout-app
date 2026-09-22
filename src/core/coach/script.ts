@@ -26,8 +26,10 @@ export interface CoachScript {
   readonly setDone: string;
   readonly setDoneVariants: readonly string[];
   readonly exerciseDone: (exercise: string) => string;
+  /** "Vila 45 sekunder." / "Vila en och en halv minut." – spoken once, when the rest starts. */
   readonly rest: (seconds: number) => string;
-  readonly restEnding: string; // spoken at ~3 s left
+  /** Spoken when the rest is over – never counted down. */
+  readonly restOver: string;
   readonly restSkipped: string;
   readonly tapWhenReady: string;
   readonly paused: string;
@@ -43,6 +45,7 @@ export interface CoachScript {
   readonly finished: string;
   readonly finishedWithName: (name: string) => string;
   readonly aborted: string;
+  /** Spoken once during a long timed hold ("10 kvar"). Rests never use this. */
   readonly timeLeft: (seconds: number) => string;
   readonly setsLeft: (sets: number) => string;
   readonly lastSet: string;
@@ -72,6 +75,32 @@ const NUMBERS_EN = [
   'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
   'twenty-one', 'twenty-two', 'twenty-three', 'twenty-four', 'twenty-five', 'twenty-six', 'twenty-seven', 'twenty-eight', 'twenty-nine', 'thirty',
 ];
+
+const MINUTES_SV = ['noll', 'en', 'två', 'tre', 'fyra', 'fem', 'sex'] as const;
+const MINUTES_EN = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'] as const;
+
+/**
+ * How a rest length is spoken. Seconds are fine up to a minute, but
+ * "90 sekunder" is awkward to listen to – whole minutes are said as minutes
+ * and 90 s as "en och en halv minut". Everything else stays in seconds.
+ *
+ *   30 → "30 sekunder"      60 → "en minut"       90 → "en och en halv minut"
+ *   45 → "45 sekunder"     120 → "två minuter"   150 → "150 sekunder"
+ */
+export function restDurationText(seconds: number, locale: Locale): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s === 90) return locale === 'sv' ? 'en och en halv minut' : 'one and a half minutes';
+  if (s > 0 && s % 60 === 0) {
+    const minutes = s / 60;
+    if (locale === 'sv') {
+      const word = MINUTES_SV[minutes] ?? String(minutes);
+      return minutes === 1 ? `${word} minut` : `${word} minuter`;
+    }
+    const word = MINUTES_EN[minutes] ?? String(minutes);
+    return minutes === 1 ? `${word} minute` : `${word} minutes`;
+  }
+  return locale === 'sv' ? `${s} sekunder` : `${s} seconds`;
+}
 
 const SV_LABELS: Record<IntensityLabelKey, string> = {
   light: 'lätt',
@@ -108,8 +137,8 @@ const sv: CoachScript = {
   setDone: 'Bra jobbat.',
   setDoneVariants: ['Bra jobbat.', 'Snyggt!', 'Så ska det se ut.', 'Grymt.', 'Där satt den.'],
   exerciseDone: (exercise) => `${exercise} klart.`,
-  rest: (seconds) => `Vila ${seconds} sekunder.`,
-  restEnding: 'Gör dig redo.',
+  rest: (seconds) => `Vila ${restDurationText(seconds, 'sv')}.`,
+  restOver: 'Okej, vilan är över.',
   restSkipped: 'Vi kör direkt.',
   tapWhenReady: 'Tryck när du är redo.',
   paused: 'Pausat.',
@@ -175,8 +204,8 @@ const en: CoachScript = {
   setDone: 'Nice work.',
   setDoneVariants: ['Nice work.', 'Clean!', 'That’s how it’s done.', 'Strong.', 'Nailed it.'],
   exerciseDone: (exercise) => `${exercise} done.`,
-  rest: (seconds) => `Rest ${seconds} seconds.`,
-  restEnding: 'Get ready.',
+  rest: (seconds) => `Rest for ${restDurationText(seconds, 'en')}.`,
+  restOver: 'Alright, rest over.',
   restSkipped: 'Straight in.',
   tapWhenReady: 'Tap when you are ready.',
   paused: 'Paused.',

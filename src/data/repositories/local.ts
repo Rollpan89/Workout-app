@@ -6,6 +6,7 @@ import {
   type Exercise,
   type SessionLog,
   type Workout,
+  type WorkoutOverride,
 } from '@/core/domain';
 import type { SessionCheckpoint } from '@/core/engine/types';
 
@@ -23,6 +24,7 @@ const KEYS = {
   checkpoint: 'sessionCheckpoint',
   settings: 'settings',
   customWorkouts: 'customWorkouts',
+  workoutOverrides: 'workoutOverrides',
 } as const;
 
 /** Workouts ship with the app bundle, so this repository is fully in-memory. */
@@ -74,6 +76,26 @@ export class LocalCustomWorkoutRepository implements CustomWorkoutRepository {
     await this.store.set(
       KEYS.customWorkouts,
       drafts.filter((d) => d.id !== id),
+    );
+  }
+
+  async listOverrides(): Promise<readonly WorkoutOverride[]> {
+    return (await this.store.get<WorkoutOverride[]>(KEYS.workoutOverrides)) ?? [];
+  }
+
+  async saveOverride(override: WorkoutOverride): Promise<void> {
+    const overrides = (await this.store.get<WorkoutOverride[]>(KEYS.workoutOverrides)) ?? [];
+    await this.store.set(KEYS.workoutOverrides, [
+      override,
+      ...overrides.filter((o) => o.workoutId !== override.workoutId),
+    ]);
+  }
+
+  async deleteOverride(workoutId: string): Promise<void> {
+    const overrides = (await this.store.get<WorkoutOverride[]>(KEYS.workoutOverrides)) ?? [];
+    await this.store.set(
+      KEYS.workoutOverrides,
+      overrides.filter((o) => o.workoutId !== workoutId),
     );
   }
 }

@@ -70,11 +70,17 @@ export function SessionScreen() {
   );
 
   if (!snapshot || !plan || !snapshot.step) {
+    // Nothing is running (the session was reset, or the screen was opened
+    // cold). Point the user back to the library instead of showing "…".
     return (
-      <View style={[styles.root, styles.center]}>
-        <Text variant="h2" color={colors.textMuted}>
-          …
+      <View style={[styles.root, styles.center, { gap: spacing.md, padding: spacing.xl }]}>
+        <Text variant="h2" color={colors.textMuted} upper align="center" testID="session-empty">
+          {t.activeSession.none}
         </Text>
+        <Text variant="body" color={colors.textDim} align="center">
+          {t.activeSession.noneHint}
+        </Text>
+        <Button label={t.common.back} variant="secondary" onPress={() => router.replace('/')} testID="session-empty-back" />
       </View>
     );
   }

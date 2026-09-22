@@ -5,11 +5,12 @@ import { useI18n } from '@/hooks/useI18n';
 import { colors, fonts } from '@/theme';
 import { Text } from '@/ui/primitives';
 
-type IconName = 'library' | 'history' | 'settings';
+type IconName = 'library' | 'history' | 'exercises' | 'settings';
 
 const GLYPH: Record<IconName, string> = {
   library: '▶',
   history: '≡',
+  exercises: '◈',
   settings: '⚙',
 };
 
@@ -45,6 +46,10 @@ export default function TabsLayout() {
         options={{ title: t.tabs.history, tabBarIcon: ({ focused }) => <TabIcon name="history" focused={focused} /> }}
       />
       <Tabs.Screen
+        name="exercises"
+        options={{ title: t.tabs.exercises, tabBarIcon: ({ focused }) => <TabIcon name="exercises" focused={focused} /> }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{ title: t.tabs.settings, tabBarIcon: ({ focused }) => <TabIcon name="settings" focused={focused} /> }}
       />
@@ -60,7 +65,7 @@ const styles = StyleSheet.create({
     height: 64,
     paddingTop: 6,
   },
-  label: { fontFamily: fonts.subheading, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
+  label: { fontFamily: fonts.subheading, fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase' },
   icon: {
     width: 32,
     height: 24,

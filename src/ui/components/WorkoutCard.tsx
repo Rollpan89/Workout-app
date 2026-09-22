@@ -13,13 +13,15 @@ export interface WorkoutCardProps {
   onEdit?: (workout: Workout) => void;
   /** Shown as "Radera" on custom workouts; confirmed inline before firing. */
   onDelete?: (workout: Workout) => void;
+  /** Shown as "Dela" on custom workouts – opens the share-code sheet. */
+  onShare?: (workout: Workout) => void;
 }
 
-export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardProps) {
+export function WorkoutCard({ workout, onPress, onEdit, onDelete, onShare }: WorkoutCardProps) {
   const { t, lz } = useI18n();
   const tone = accent[workout.accent];
   const [confirming, setConfirming] = useState(false);
-  const manageable = !!workout.custom && (onEdit || onDelete);
+  const manageable = !!workout.custom && (onEdit || onDelete || onShare);
 
   // Edit/delete controls are rendered in the card *footer*: on web the
   // pressable card is a <button>, and a <button> cannot contain a <button>.
@@ -51,6 +53,9 @@ export function WorkoutCard({ workout, onPress, onEdit, onDelete }: WorkoutCardP
       <View style={styles.manageRow}>
         {onEdit ? (
           <Button label={t.builder.edit} variant="secondary" size="sm" onPress={() => onEdit(workout)} testID={`workout-${workout.id}-edit`} />
+        ) : null}
+        {onShare ? (
+          <Button label={t.share.cta} variant="ghost" size="sm" onPress={() => onShare(workout)} testID={`workout-${workout.id}-share`} />
         ) : null}
         {onDelete ? (
           <Button label={t.builder.delete} variant="ghost" size="sm" onPress={() => setConfirming(true)} testID={`workout-${workout.id}-delete`} />

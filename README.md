@@ -30,9 +30,10 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 
 | Flöde | Status |
 |---|---|
-| Välj pass ur ett bibliotek av modulära program (7 färdiga, varje med egen färg) | ✅ |
+| Välj pass ur ett bibliotek av modulära program (**27 färdiga**, varje med egen färg) | ✅ |
 | **Skapa egna pass** i en enkel byggare, eller **kopiera & anpassa** ett färdigt program – redigera och radera direkt från korten i biblioteket, från detaljvyn eller inne i byggaren | ✅ |
-| Röstcoach räknar reps och vila i stadig takt, på svenska eller engelska | ✅ |
+| Röstcoach räknar reps i stadig takt, på svenska eller engelska | ✅ |
+| **Vilan sägs en gång** – "Vila en och en halv minut." vid start, "Okej, vilan är över." vid slut. **Ingen nedräkning alls** under vilan (v5) | ✅ |
 | Coachen är **involverad**: teknik-cues mellan reps, tempo-ord på långsamma lyft, pepp mot slutet av setet (med ditt namn), varierat beröm, "X set kvar", vilo-prat | ✅ |
 | Coachen **annonserar nästa övning (med mål) innan vilan startar** och läser valfria **utförandeinstruktioner före nästa nedräkning** – inga, korta eller utförliga | ✅ |
 | **Levande röst**: energi-förval (Lugn / Energisk / Full gas), automatiskt val av bästa röst på enheten (premium > förbättrad > standard), röstväljare med provlyssning | ✅ |
@@ -54,6 +55,11 @@ PulseCoach är byggd med **Expo / React Native + TypeScript** och en medvetet mo
 | Kalorier visas som **ärligt intervall** (±20 %) och märks "uppskattning" (v4) | ✅ |
 | **Sök** i biblioteket (titel, tagline, övningsnamn) och **varv/cirklar** i byggaren (v4) | ✅ |
 | **Introduktion** vid första start (3 steg), **ErrorBoundary** med lugn felsida, **opt-in felrapporter** (av som standard) (v4) | ✅ |
+| **Passet fortsätter om du backar ut**: en "Pass pågår"-banner i alla flikar visar passet och tar dig rakt tillbaka; att starta ett nytt pass frågar först (v5) | ✅ |
+| **Radera enskilt pass direkt i historiklistan** – förutom i detaljvyn (v5) | ✅ |
+| **Dela egna pass** som textkod och **Importera pass** – ingen server, inget konto, funkar i SMS/WhatsApp (v5) | ✅ |
+| **Övningsarkiv**: alla 59 övningar i appen, sökbara på namn/muskel/utrustning, filter på kategori och muskelgrupp, tryck för instruktioner (v5) | ✅ |
+| **Admin-läge**: redigera de **förinställda** passen på plats – ändringen slår igenom i biblioteket och kan återställas (v5) | ✅ |
 | Data sparas lokalt (max 365 loggar), med repository-lager förberett för backend | ✅ |
 
 ---
@@ -130,6 +136,8 @@ Utöver grundtyperna finns:
 
 - `ExerciseInstructions` på varje övning: `steps` (så gör du), `mistakes` (vanliga fel), `coachCues` (korta cues coachen roterar mellan), `tempo { down, up }` för tempo-räkning. Allt tvåspråkigt via `lz(sv, en)`.
 - `WorkoutAccent` (7 färger) + `Workout.custom`/`createdAt` för egna pass.
+- `WorkoutOverride` – admin-lägets "använd version av ett förinställt pass": `{ workoutId, draft, updatedAt }`. Utkastet bär det inbyggda id:t, så det kompilerade passet tar originalets plats i varje uppslag (`findWorkout`, biblioteket, historiken, summeringen).
+- `shareCode.ts` – **delningsformatet**: `encodeWorkoutShareCode(draft)` ger `PULSECOACH:WORKOUT:1:{…}` (kompakt JSON utan id:n), `decodeWorkoutShareCode(text, lookup)` läser en kod som kan komma inbäddad i en mening, klämmer varje tal mot `DRAFT_LIMITS` och hoppar över övningar appen inte känner igen (`unknownExerciseIds`). `draftFromSharedWorkout()` gör om koden till ett vanligt, redigerbart utkast.
 - `customWorkout.ts` – **utkastmodellen för egna pass** (`CustomWorkoutDraft`): en platt, redigerbar lista av övningar med set, reps-eller-sekunder och vila. `compileDraft()` kompilerar utkastet till en vanlig `Workout` (ett `main`-block, härledd utrustning/muskelfokus/tid, `custom: true`), så planner, motor, coach, mätvärden och summering behöver inte veta om att passet är egenbyggt. `draftFromWorkout()` plattar ut vilket pass som helst (varv expanderas) för "kopiera & anpassa". `validateDraft()` + `DRAFT_LIMITS` sätter gränserna.
 
 | Fil | Innehåll |
@@ -191,8 +199,8 @@ Motorn hanterar även *glesa ticks* (appen låg i bakgrunden): missade reps "hin
 | Fil | Roll |
 |---|---|
 | `SpeechPort.ts` | Gränssnittet `speak(utterance)` / `stop()` / `isSpeaking()`. Utterance bär `priority: 'interrupt' \| 'queue' \| 'drop'`. `SilentSpeech` för tester och avstängd röst. |
-| `script.ts` | **Allt coachen kan säga**, per språk. Siffror stavas ut ("tre", "three") för krispig TTS. Hälsning med namn, varierat beröm, tidig/sen pepp, personliga repliker, vilo-prat, hold-cues, intensitetsförklaringar. |
-| `Coach.ts` | Prenumererar på motorns events och väljer vad som sägs och med vilken prioritet. Repräkning *avbryter* (måste vara i takt), instruktioner *köas*, pepp *droppas* om upptagen. |
+| `script.ts` | **Allt coachen kan säga**, per språk. Siffror stavas ut ("tre", "three") för krispig TTS. Hälsning med namn, varierat beröm, tidig/sen pepp, personliga repliker, vilo-prat, hold-cues, intensitetsförklaringar. `restDurationText(seconds, locale)` gör om vilolängden till tal: `30` → "30 sekunder", `60` → "en minut", `90` → "en och en halv minut", `120` → "två minuter". |
+| `Coach.ts` | Prenumererar på motorns events och väljer vad som sägs och med vilken prioritet. Repräkning *avbryter* (måste vara i takt), instruktioner *köas*, pepp *droppas* om upptagen. En vila är **tyst mellan start- och slutraden**: inga siffror, ingen nedräkning. "Vilan är över" läggs i stället in som inledning på nästa replik, så att en annonsering eller en nedräkning aldrig kan klippa den. |
 
 Prioritetsmodellen är nyckeln till att räkningen känns stadig: "sju" får aldrig vänta på att en lång mening ska talas klart.
 
@@ -206,12 +214,14 @@ Prioritetsmodellen är nyckeln till att räkningen känns stadig: "sju" får ald
  6  7  8 ──► pepp i andra halvan, ibland med namn ("Kom igen Anna!")
 "Två kvar!"  "Sista!"
  beröm (varieras) ─► "Knäböj klart." ─► "Nästa: Planka, 30 sekunder." ─► "Vila 20 sekunder."
- efter vilan ─► "Nästa: Planka. 30 sekunder. Underarmarna i golvet. Rak linje." ─► tre, två, ett
+ efter vilan ─► "Okej, vilan är över. Nästa: Planka. 30 sekunder. Underarmarna i golvet. Rak linje." ─► tre, två, ett
 ```
 
 **Övergångar mellan övningar.** Nästa övning kan sägas *före* viloraden (inställning `announceNext`), så att du hinner byta plats eller hämta redskap medan klockan tickar. Precis före varje ny övnings nedräkning introduceras övningen alltid med intensitetsskalat mål. Därefter läses antingen ingen, en kort eller alla steg-för-steg-instruktioner upp (`nextExerciseInstructions`: `off` / `brief` / `detailed`). Nedräkningen 3–2–1 börjar först när den uppläsningen är klar.
 
-Tidsbaserade hållövningar får hold-cues var 8:e sekund och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues, tempo-räkning, annonsering av nästa övning och instruktionsnivån före nedräkning kan ställas in var för sig.
+**Vila utan nedräkning.** Vilan annonseras **en gång** när den börjar ("Vila 45 sekunder.", "Vila en och en halv minut.") och avslutas med **en** rad ("Okej, vilan är över." / "Alright, rest over.") – däremellan är coachen tyst: inga siffror, ingen "gör dig redo", inga tio-sekunder-varningar. Skärmens vilotimer fortsätter förstås räkna ner visuellt, och går att hoppa över. Slutraden slås ihop med nästa instruktion ("Okej, vilan är över. Set 2 av 2. Kör!") just för att den alltid ska höras – två separata repliker skulle klippa varandra.
+
+Tidsbaserade hållövningar (plankan, wall sit …) får fortfarande hold-cues var 8:e sekund, andningspåminnelser och sin 3–2–1-nedräkning i **arbetsfasen** – det är vilan som är tyst. och andningspåminnelser däremellan. Tempo-ordet schemaläggs på **motorns klocka** (via `snapshot`), inte `setTimeout`, så det pausar med passet och är deterministiskt i tester. Källan till cues är `exercise.instructions.coachCues`/`tempo`. Teknik-cues, tempo-räkning, annonsering av nästa övning och instruktionsnivån före nedräkning kan ställas in var för sig.
 
 **Röstens energi.** `VoiceSettings.energy` (`calm` / `energetic` / `hype`) är ett förval som multipliceras med användarens tempo: `effectiveVoiceParams()` i `domain/settings.ts` ger rate/pitch som skickas med varje utterance (Energisk = 1.10× / 1.08, Full gas = 1.20× / 1.15). Standard är *Energisk*.
 
@@ -255,14 +265,17 @@ Se [Datalagring & backend-förberedelse](#datalagring--backend-förberedelse).
 
 | Skärm | Route | Roll |
 |---|---|---|
-| `LibraryScreen` + `ResumeBanner` + `OnboardingOverlay` | `/` | Bibliotek med **sök** + målfilter, streak/summering, sektionen **Mina pass**, "Skapa eget pass". Visar **"Avbrutet pass – Fortsätt?"** när en checkpoint finns och **intron** vid första start |
-| `WorkoutDetailScreen` | `/workout/[id]` | Dagsform → startintensitet, **live-skalad översikt** (tryck på en övning → `ExerciseSheet`), **räknetempo** (Lugnt/Normalt/Snabbt), interaktionsnivå, **Starta**; "Kopiera & anpassa" på alla pass, "Redigera"/"Radera" på egna |
-| `WorkoutBuilderScreen` + `ExercisePicker` + `DraftExerciseRow` | `/builder/[id]` | Byggaren: namn, färg, mål, nivå, övningslista med steppers (set / reps eller sekunder / vila), reps↔tid, ordning, info-ark, **varv** (1–5, cirkel), vila mellan övningar, validering. `id = new` (tomt), `new?from=<id>` (kopia) eller `<eget id>` (redigera) |
-| `SessionScreen` + `PhaseDisplay` | `/session` | Det aktiva passet: jättesiffra, fas, progress, intensitet, **tempo ±**, kontroller; **dubbeltryck på displayen = paus**; roterbar |
+| `LibraryScreen` + `ResumeBanner` + `ActiveSessionBanner` + `OnboardingOverlay` | `/` | Bibliotek med **sök** + målfilter, streak/summering, sektionen **Mina pass**, "Skapa eget pass", "**Importera pass**". Visar **"Pass pågår"** om ett pass kör (v5), **"Avbrutet pass – Fortsätt?"** när en checkpoint finns, och **intron** vid första start |
+| `WorkoutDetailScreen` | `/workout/[id]` | Dagsform → startintensitet, **live-skalad översikt** (tryck på en övning → `ExerciseSheet`), **räknetempo** (Lugnt/Normalt/Snabbt), interaktionsnivå, **Starta**; "Kopiera & anpassa" på alla pass, "Redigera"/"**Dela**"/"Radera" på egna, "Admin · Redigera" på förinställda när admin-läget är på. Kör ett pass redan blir CTA:n "**Återgå till passet**" + "Starta nytt (avslutar pågående)" |
+| `WorkoutBuilderScreen` + `ExercisePicker` + `DraftExerciseRow` | `/builder/[id]` | Byggaren: namn, färg, mål, nivå, övningslista med steppers (set / reps eller sekunder / vila), reps↔tid, ordning, info-ark, **varv** (1–5, cirkel), vila mellan övningar, validering. `id = new` (tomt), `new?from=<id>` (kopia), `<eget id>` (redigera) eller `new?override=<inbyggt id>` (**admin**: redigera ett förinställt pass på plats) |
+| `ExerciseArchiveScreen` | `/exercises` | **Övningsarkivet** (v5): alla övningar, fritextsök på namn/muskel/utrustning, kategori- och muskelchips, antal, tryck → `ExerciseSheet` |
+| `ImportWorkoutScreen` | `/import` | **Importera pass** (v5): klistra in en delningskod → förhandsvisning (namn, antal övningar, tid, ev. överhoppade övningar) → "Lägg till bland mina pass" |
+| `AdminScreen` | `/admin` | **Admin** (v5): lista över de förinställda passen med "Redigerad"-märke, "Redigera" och "Återställ"/"Återställ alla". Nås från Inställningar när admin-läget är på |
+| `SessionScreen` + `PhaseDisplay` | `/session` | Det aktiva passet: jättesiffra, fas, progress, intensitet, **tempo ±**, kontroller; **dubbeltryck på displayen = paus**; roterbar. Öppnas skärmen utan ett pågående pass visas en väg tillbaka till biblioteket i stället för en tom display |
 | `SummaryScreen` | `/summary` | Kalorier (intervall), tid, reps, set, snittintensitet, **jämfört med förra gången**, muskelpåverkan |
-| `HistoryScreen` | `/history` | Totaler, streak, muskelbalans, lista (`FlatList`) med ▲/▼ mot förra passet |
+| `HistoryScreen` | `/history` | Totaler, streak, muskelbalans, lista (`FlatList`) med ▲/▼ mot förra passet och **"Radera passet"** per rad (inline-confirm på webben, native-dialog på mobil) (v5) |
 | `SessionDetailScreen` | `/history/[id]` | Ett loggat pass: alla mått, jämförelse, muskelpåverkan, **Kör igen**, **Radera passet** |
-| `SettingsScreen` | `/settings` | Språk, interaktion, röst, profil, **felrapporter (opt-in)** |
+| `SettingsScreen` | `/settings` | Språk, interaktion, röst, profil, **Admin-läge** (v5), **felrapporter (opt-in)** |
 
 ### `app/` – routing
 
@@ -308,8 +321,8 @@ Konkret exempel, hands-free, *Knäböj 2×5*:
 | 5.0 | `setStarted` | "Kör!" | 0 / 5 reps |
 | 8, 11, 14, 17 | `rep` 1–4 | "ett" "två" "tre" "fyra" | 1…4 |
 | 20 | `rep` 5 → `setCompleted` → `restStarted` | "Sista!" "Bra jobbat." "Vila 60 sekunder." | VILA 60 |
-| 70 | `restTick` 10 … 3,2,1 | "10 kvar." … "Gör dig redo." "två" "ett" | 10 … 1 |
-| 80 | `setStarted` (samma övning → ingen ny annonsering) | "Set 2 av 2." "Kör!" | 0 / 5 |
+| 70 | — (vilan är tyst) | *inget* – ingen nedräkning, ingen siffra | 10 … 1 |
+| 80 | `restEnded` → `setStarted` | "Okej, vilan är över. Set 2 av 2." … "Kör!" | 0 / 5 |
 
 Om användaren trycker **+** vid t = 10: `intensityChanged 1.0→1.25`, målet blir 6 reps direkt, coachen säger "Intensitet: hård. Vi ökar. 6 repetitioner nu.", nästa vila blir 48 s istället för 60.
 
@@ -354,7 +367,7 @@ Regler:
 - `restSeconds` på en `WorkoutExercise` överrider blockets standardvila.
 - Sista steget i hela passet får alltid 0 s vila (planern sköter det).
 
-Färdiga program: **Full Body Blast**, **Lower Power**, **Upper Armour**, **HIIT Inferno**, **Core Crusher**, **Kettlebell Engine**, **Mobility Reset**. 30 övningar i biblioteket.
+Färdiga program (27 st, bl.a. Muscle & Strength-serien): **Full Body Blast**, **Lower Power**, **Upper Armour**, **HIIT Inferno**, **Core Crusher**, **Kettlebell Engine**, **Mobility Reset**. 59 övningar i biblioteket – alla listade i **Övningsarkivet** (fliken *Övningar*).
 
 ---
 
@@ -419,7 +432,7 @@ Nivån väljs som standard i Inställningar och kan överridas per pass på deta
 
 ## Datalagring & backend-förberedelse
 
-Nycklar under `pulsecoach:v1:`: `settings`, `sessions` (max **365** loggar, äldst kastas först – håller JSON-blobben och varje hydrering begränsad), `sessionCheckpoint` (pågående pass) och `customWorkouts`. Egna pass lagras som *utkast* (`CustomWorkoutDraft`) – inte som kompilerade `Workout` – så att redigeringsmodellen kan utvecklas utan att gamla data blir oläsbara. `CustomWorkoutRepository` (`listDrafts/getDraft/saveDraft/deleteDraft`) är det fjärde gränssnittet i `Repositories`.
+Nycklar under `pulsecoach:v1:`: `settings`, `sessions` (max **365** loggar, äldst kastas först – håller JSON-blobben och varje hydrering begränsad), `sessionCheckpoint` (pågående pass), `customWorkouts` och `workoutOverrides` (admin-lägets redigeringar av de förinställda passen). Egna pass lagras som *utkast* (`CustomWorkoutDraft`) – inte som kompilerade `Workout` – så att redigeringsmodellen kan utvecklas utan att gamla data blir oläsbara. `CustomWorkoutRepository` (`listDrafts/getDraft/saveDraft/deleteDraft` + `listOverrides/saveOverride/deleteOverride`) är det fjärde gränssnittet i `Repositories`.
 
 Appen använder **inget API idag** – all data ligger lokalt i AsyncStorage under namnrymden `pulsecoach:v1:`. Men UI och stores pratar aldrig direkt med lagringen; de går via gränssnitt i `src/data/repositories/types.ts`:
 
@@ -496,10 +509,11 @@ npm test
 | `core/__tests__/planner.test.ts` | Utplattning, varv, vila-regler, felhantering |
 | `core/__tests__/intensity.test.ts` | Skala, klämning, readiness-mappning |
 | `core/__tests__/SessionEngine.test.ts` | Hela tillståndsmaskinen med fejkad klocka: räkning, ikapp-räkning, **begränsad ikapp-räkning efter bakgrundsluckor**, paus, intensitet mitt i set, **tempo mitt i set (bevarat rep-fönster, klämning)**, **checkpoint/restore**, alla tre interaktionsnivåer |
-| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål) och **instruktioner före nedräkning** (`off`/`brief`/`detailed`, där 3–2–1 väntar på uppläsningen) |
+| `core/__tests__/Coach.test.ts` | Exakt vad som sägs, i vilken ordning, med vilken prioritet, på båda språken – inkl. teknik-cues, tempo-ord, pepp med namn, set-kvar, sista set/övning, intensitetsförklaringar, **nästa-övning-före-vila** (på/av, intensitetsskalat mål), **instruktioner före nedräkning** (`off`/`brief`/`detailed`, där 3–2–1 väntar på uppläsningen) och **vilan utan nedräkning** (tyst mittparti, "en och en halv minut"-formateringen, engelska vilo-raderna) |
 | `core/__tests__/voice.test.ts` | Röstrankningen (premium > enhanced > standard > legacy) och energi-förvalens rate/pitch |
 | `core/__tests__/metrics.test.ts` | MET-formel, normalisering, snittintensitet, streak-logik, **jämförelse med förra passet**, **kaloriintervall** |
 | `core/__tests__/customWorkout.test.ts` | Utkast: validering, defaults per kategori, färgrotation, kompilering till körbar `Workout`, **varv/cirklar** (kompilering, klämning, kopiering behåller varv), repository-CRUD, **historik-tak (365) + checkpoint-rundtur** |
+| `core/__tests__/shareCode.test.ts` | Delningskoden: rundtur, kod inbäddad i en mening, klämning av varje tal, okända övningar hoppas över och rapporteras, samtliga felfall (`empty`/`malformed`/`unsupportedVersion`/`noName`/`noExercises`) |
 | `core/__tests__/theme.test.ts` | Paletten är komplett, `onAccent` väljer rätt textfärg, **WCAG-golv**: text ≥ 7:1, muted/dim ≥ 4,5:1 på alla ytor, text-på-accent ≥ 3:1 |
 | `adapters/__tests__/audioSession.test.ts` | Audiosessionen: rätt `setAudioModeAsync`-läge, tyst loop, **statushändelser → ticks**, prenumerationen släpps vid `end()`, idempotens, `end()` under pågående `begin()`, trasig native-modul |
 | `ui/__tests__/systemBars.test.tsx` | **Immersivt läge**: Android gömmer navigationsfältet via `expo-navigation-bar` (och aldrig på iOS), tillståndet åsätts på nytt varje gång appen blir aktiv, statusfältet renderas dolt |
@@ -507,9 +521,9 @@ npm test
 | `ui/__tests__/ErrorBoundary.test.tsx` | Fångar renderfel, visar svensk felsida, lämnar felet till `CrashReporter`, återhämtar sig på "Starta om" |
 | `ui/__tests__/dom-nesting.web.test.tsx` | Renderar `Card`/`WorkoutCard` via **react-native-web** till HTML och verifierar att ingen `<button>` hamnar i en `<button>` (körs med `npm run test:web`) |
 | `ui/__tests__/typography.web.test.tsx` | Renderar knappar till riktig CSS/HTML på webben och bekräftar att etiketten får det **äkta kursiva snittet** – aldrig `font-style: italic` (fejkad lutning) |
-| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, instruktionsnivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
+| `__tests__/flow.e2e.test.tsx` | **Hela appen** via expo-routers testbibliotek: bibliotek → detalj → session → summering → historik; live-skalad översikt; instruktionsark; assisterat läge på engelska; bygg eget pass → kör → radera; kopiera färdigt pass → redigera; **redigera/radera direkt från bibliotekskorten** (med ångra); **röstinställningarna** (annonsera nästa, instruktionsnivå, energi, röstväljare med premium-rankning och provlyssning); v4: **tempo före/under set + minne per övning**, **krasch → omstart → "Fortsätt passet?"**, **blind paus via dubbeltryck**, **jämförelse + detaljvy + radera enskilt pass**, **intro vid första start**, **sök i biblioteket**, **varv i byggaren**, **opt-in felrapporter**; v4.1: **frusna JS-timers → motorn drivs av audiospelarens händelser**; v5: **backa ut ur passet → "Pass pågår"-banner → tillbaka in i samma pass**, **starta nytt pass frågar först**, **radera pass direkt i historiklistan**, **övningsarkivet** (sök + kategori + muskel + instruktionsark), **dela → importera ett eget pass** och **admin: redigera ett förinställt pass, spara, återställ**. Endast TTS/haptik/ljud/orientering/lagring/typsnitt mockas. |
 
-147 tester, ~25 s, plus 11 webbtester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
+162 tester, ~25 s, plus 11 webbtester (`npm run test:web`, separat Jest-projekt med `jest-expo/web` eftersom de renderar riktig HTML). Kärnan testas helt utan React eller native-moduler tack vare den injicerbara klockan (`now`) och `SilentSpeech`.
 
 ---
 
@@ -654,12 +668,15 @@ Skapa i `src/features/<namn>/`, exportera från en enrads-fil i `app/`, lägg ti
   2. **Förinspelad röstpack** – en riktig coach spelar in skriptet i `script.ts`; dynamiska delar (övningsnamn, siffror) sätts ihop av klipp. Bäst kvalitet offline, men allt nytt innehåll kräver ny inspelning.
   3. **Hybrid** – klipp/moln för fasta repliker, enhets-TTS som reserv för dynamisk text.
 - **Kalorier** är uppskattningar (MET-modell); ingen pulsdata.
+- **Admin-läget redigerar platt.** Ett förinställt pass plattas ut till byggarens lista (varv expanderas), så en admin-redigering tappar block- och varvstrukturen – medvetet: samma redigeringsmodell som egna pass, noll extra kod. Redigeringen ligger lokalt på enheten (`workoutOverrides`) och försvinner inte när appen uppdateras, men den följer inte med till en annan enhet och slår inte igenom på nya inbyggda pass.
+- **Delning är text, inte länk.** Koden (`PULSECOACH:WORKOUT:1:{…}`) fungerar i vilken kanal som helst, men mottagaren måste klistra in den under *Importera pass* – det finns ingen djuplänk ännu (`Linking` + en route skulle räcka, formatet är redan självständigt), och övningar som mottagarens appversion inte känner igen hoppas över med en varning.
 - **Egna pass är enkla:** en platt lista (inga block/varv) – medvetet, för att byggaren ska vara snabb att använda. Modellen kompileras till samma `Workout`-form som de färdiga programmen, så block/varv kan läggas till i utkastet senare utan att röra motorn.
-- **Egna övningar** kan inte skapas ännu – byggaren väljer ur biblioteket (30 övningar).
+- **Egna övningar** kan inte skapas ännu – byggaren och arkivet använder bibliotekets 59 övningar. Nästa steg är att låta ett `CustomExercise` ligga i samma `EXERCISES`-lista (modellen är redan `Exercise`).
 - **Blind paus via volymknapp** kräver en native-modul utanför Expo SDK (t.ex. `react-native-volume-manager`) – dubbeltryck är implementerat; skak-paus valdes bort eftersom burpees och jumping jacks skulle utlösa den.
 - **Android bakgrundsljud > några minuter** på telefoner med aggressiv batterihantering kan kräva `setActiveForLockScreen` (låsskärmskontroller + notis); se protokollet ovan. Android 17 skärper dessutom kraven på bakgrundsljud (foreground service krävs) – `expo-audio`:s `AudioControlsService` är redan deklarerad i manifestet via config-pluginen, så vägen dit är att aktivera låsskärmsläget, inte att bygga något nytt.
 - **Fullskärmsläge på iOS** – statusfältet göms, men hem-indikatorn (strecket längst ner) styrs av iOS och kan bara gömmas från native-kod (`prefersHomeIndicatorAutoHidden`), vilket skulle kräva en egen modul och ett nytt dev-client-bygge. Android får full immersivitet: navigationsfältet göms via `WindowInsetsControllerCompat` och kommer tillbaka när du drar in från kanten.
 - **Immersivt läge och gester** – på Android med skärmgestnavigation gäller standardbeteendet för dolda systemfält: första svepet från kanten visar fälten (och kan därmed "äta" den gesten), sedan fungerar tillbaka/hem som vanligt. Vill man slippa det helt krävs en egen native-modul.
+- **Bakgrunds-banner:** ett pågående pass syns i alla flikar, men inte i telefonens notis/låsskärm (kräver `setActiveForLockScreen`/Live Activities, se ovan).
 - **Kandidater för nästa iteration:** egna övningar, ljudsignaler utöver tal, Apple Health/Google Fit-export, molnsynk via repository-lagret (utkasten är redan JSON), widgets/Live Activities för vilotimern.
 
 ---

@@ -12,18 +12,22 @@ import {
   type VoiceEnergy,
   type WorkoutGoal,
 } from '@/core/domain';
+import { useRouter } from 'expo-router';
+
 import { useI18n } from '@/hooks/useI18n';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { InteractionPicker } from '@/ui/components';
 import { Button, Card, Chip, Screen, SectionTitle, Text } from '@/ui/primitives';
 
+import { ActiveSessionBanner } from '../session/ActiveSessionBanner';
 import { VoicePicker } from './VoicePicker';
 
 const GOALS: readonly WorkoutGoal[] = ['strength', 'hypertrophy', 'endurance', 'fatLoss', 'mobility'];
 const RATES = [0.8, 0.9, 1.0, 1.1, 1.25] as const;
 
 export function SettingsScreen() {
+  const router = useRouter();
   const { t } = useI18n();
   const settings = useSettingsStore((s) => s.settings);
   const setLocale = useSettingsStore((s) => s.setLocale);
@@ -32,6 +36,7 @@ export function SettingsScreen() {
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const setKeepScreenAwake = useSettingsStore((s) => s.setKeepScreenAwake);
   const setCrashReports = useSettingsStore((s) => s.setCrashReports);
+  const setAdminMode = useSettingsStore((s) => s.setAdminMode);
 
   const testVoice = () => {
     const { rate, pitch } = effectiveVoiceParams(settings.voice);
@@ -60,6 +65,8 @@ export function SettingsScreen() {
       <Text variant="hero" upper style={styles.heading}>
         {t.settings.heading}
       </Text>
+
+      <ActiveSessionBanner />
 
       <SectionTitle title={t.settings.language} />
       <View style={styles.chips}>
@@ -221,6 +228,30 @@ export function SettingsScreen() {
           <Chip key={g} label={t.goal[g]} selected={settings.profile.goal === g} onPress={() => updateProfile({ goal: g })} />
         ))}
       </View>
+
+      <SectionTitle title={t.admin.section} color={colors.cyan} />
+      <Card padding={0}>
+        <Row label={t.admin.mode} hint={t.admin.modeDesc} last={!settings.adminMode}>
+          <Switch
+            value={settings.adminMode}
+            onValueChange={setAdminMode}
+            trackColor={{ true: colors.cyan, false: colors.surfaceHigh }}
+            thumbColor={colors.text}
+            testID="toggle-admin-mode"
+          />
+        </Row>
+        {settings.adminMode ? (
+          <Row label={t.admin.manage} last>
+            <Button
+              label={t.admin.section}
+              variant="secondary"
+              size="sm"
+              onPress={() => router.push('/admin')}
+              testID="open-admin"
+            />
+          </Row>
+        ) : null}
+      </Card>
 
       <SectionTitle title={t.settings.about} />
       <Card padding={0} style={styles.aboutCard}>

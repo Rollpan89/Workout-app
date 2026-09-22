@@ -10,7 +10,8 @@ import { formatDate, formatDuration } from '@/i18n';
 import type { SessionLog } from '@/core/domain';
 import { useHistoryStore } from '@/state/historyStore';
 import { accent, colors, spacing } from '@/theme';
-import { MuscleImpactBars, StatTile } from '@/ui/components';
+import { DeleteButton, MuscleImpactBars, StatTile } from '@/ui/components';
+import { ActiveSessionBanner } from '@/features/session/ActiveSessionBanner';
 import { Button, Card, Screen, SectionTitle, Text } from '@/ui/primitives';
 
 export function HistoryScreen() {
@@ -19,6 +20,7 @@ export function HistoryScreen() {
   const { t, lz, locale } = useI18n();
   const logs = useHistoryStore((s) => s.logs);
   const clear = useHistoryStore((s) => s.clear);
+  const remove = useHistoryStore((s) => s.remove);
   const summary = useMemo(() => summarizeHistory(logs), [logs]);
   const [confirming, setConfirming] = useState(false);
 
@@ -33,6 +35,14 @@ export function HistoryScreen() {
           accentColor={log.completed ? accent[workout?.accent ?? 'red'].main : colors.textDim}
           onPress={() => router.push({ pathname: '/history/[id]', params: { id: log.id } })}
           testID={`log-${log.id}`}
+          footer={
+            <DeleteButton
+              label={t.history.deleteOne}
+              confirmMessage={t.history.deleteOneConfirm}
+              onConfirm={() => void remove(log.id)}
+              testID={`log-${log.id}-delete`}
+            />
+          }
         >
           <View style={styles.rowHeader}>
             <Text variant="h3" upper numberOfLines={1} style={styles.rowTitle}>
@@ -66,7 +76,7 @@ export function HistoryScreen() {
         </Card>
       );
     },
-    [logs, lz, locale, router, t],
+    [logs, lz, locale, remove, router, t],
   );
 
   const askClear = () => {
@@ -86,6 +96,7 @@ export function HistoryScreen() {
         <Text variant="hero" upper style={styles.heading}>
           {t.history.heading}
         </Text>
+        <ActiveSessionBanner />
         <View style={styles.empty}>
           <Text variant="h2" color={colors.textMuted} upper>
             {t.history.empty}
@@ -103,6 +114,7 @@ export function HistoryScreen() {
       <Text variant="hero" upper style={styles.heading}>
         {t.history.heading}
       </Text>
+      <ActiveSessionBanner />
       <View style={styles.grid}>
         <StatTile value={summary.streakDays} unit={t.history.days} label={t.history.streak} emphasis />
         <StatTile value={summary.sessions} label={t.history.sessions} />

@@ -12,7 +12,7 @@ import * as Speech from 'expo-speech';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
-import { getWorkout } from '@/content';
+import { EXERCISES, getWorkout } from '@/content';
 import type { SessionLog, Workout } from '@/core/domain';
 import { useCustomWorkoutStore } from '@/state/customWorkoutStore';
 import { getRepositories } from '@/data';
@@ -25,6 +25,9 @@ import TabsLayout from '../../app/(tabs)/_layout';
 import History from '../../app/(tabs)/history';
 import Library from '../../app/(tabs)/index';
 import Settings from '../../app/(tabs)/settings';
+import Exercises from '../../app/(tabs)/exercises';
+import Import from '../../app/import';
+import Admin from '../../app/admin/index';
 import Session from '../../app/session';
 import Summary from '../../app/summary';
 import WorkoutBuilder from '../../app/builder/[id]';
@@ -48,6 +51,9 @@ const routes = {
   '(tabs)/index': Library,
   '(tabs)/history': History,
   '(tabs)/settings': Settings,
+  '(tabs)/exercises': Exercises,
+  import: Import,
+  'admin/index': Admin,
   'workout/[id]': WorkoutDetail,
   'builder/[id]': WorkoutBuilder,
   'history/[id]': SessionDetail,
@@ -540,6 +546,246 @@ describe('PulseCoach – core flow', () => {
     fireEvent.press(screen.getByTestId('primary-start-set'));
     expect(useSessionStore.getState().snapshot?.phase).toBe('working');
   }, 30_000);
+});
+
+describe('PulseCoach – leaving and returning to a running session', () => {
+  it('keeps the session running when the user backs out, and offers a way back in', async () => {
+    // Start from the library so there is a screen to back out *to*.
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('workout-core-crusher')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('workout-core-crusher'));
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('start-workout'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    await advance(5_500); // get-ready countdown → working
+    const stepBefore = useSessionStore.getState().snapshot?.stepIndex ?? 0;
+
+    // Back out to the library: nothing is lost, the engine keeps ticking
+    act(() => {
+      router.back();
+    });
+    await waitFor(() => expect(screen.getByTestId('active-session-banner')).toBeTruthy());
+    expect(screen.getByTestId('active-session-return')).toBeTruthy();
+    await advance(1_000);
+    expect(useSessionStore.getState().snapshot?.phase).not.toBe('finished');
+
+    // The banner takes the user straight back into the running session
+    fireEvent.press(screen.getByTestId('active-session-return'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    expect(useSessionStore.getState().snapshot?.stepIndex ?? 0).toBeGreaterThanOrEqual(stepBefore);
+
+    // …and starting a *different* workout never silently kills the running one
+    act(() => {
+      router.back();
+    });
+    await waitFor(() => expect(screen.getByTestId('active-session-banner')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('workout-full-body-blast'));
+    await waitFor(() => expect(screen.getByTestId('return-to-session')).toBeTruthy());
+    expect(useSessionStore.getState().plan?.workout.id).toBe('core-crusher');
+
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+    });
+    fireEvent.press(screen.getByTestId('start-workout'));
+    alertSpy.mockRestore();
+    await waitFor(() => expect(useSessionStore.getState().plan?.workout.id).toBe('full-body-blast'));
+    await waitFor(() => expect(screen.getByTestId('big-number')).toBeTruthy());
+    await act(async () => {
+      useSessionStore.getState().stop();
+    });
+  }, 30_000);
+
+  it('says there is nothing to return to when the screen is opened cold', async () => {
+    renderRouter(routes, { initialUrl: '/session' });
+    await waitFor(() => expect(screen.getByTestId('session-empty')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('session-empty-back'));
+    await waitFor(() => expect(screen.getByText(/Välj ditt pass/i)).toBeTruthy());
+  });
+});
+
+describe('PulseCoach – history', () => {
+  it('deletes a single log straight from the history list', async () => {
+    const base: SessionLog = {
+      id: 'log-a',
+      workoutId: 'core-crusher',
+      startedAt: '2026-09-01T10:00:00.000Z',
+      endedAt: '2026-09-01T10:20:00.000Z',
+      durationSeconds: 1200,
+      workSeconds: 900,
+      completed: true,
+      averageIntensity: 1,
+      totalReps: 40,
+      totalSets: 6,
+      estimatedCalories: 120,
+      muscleImpact: { core: 1 },
+    };
+    await getRepositories().sessions.saveSession(base);
+    await getRepositories().sessions.saveSession({ ...base, id: 'log-b', endedAt: '2026-09-05T10:20:00.000Z' });
+
+    renderRouter(routes, { initialUrl: '/history' });
+    await waitFor(() => expect(screen.getByTestId('log-log-b')).toBeTruthy());
+    expect(screen.getByTestId('log-log-a')).toBeTruthy();
+
+    // Native confirm dialog → press the destructive button
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+    });
+    fireEvent.press(screen.getByTestId('log-log-a-delete'));
+    alertSpy.mockRestore();
+
+    await waitFor(() => expect(screen.queryByTestId('log-log-a')).toBeNull());
+    expect(screen.getByTestId('log-log-b')).toBeTruthy();
+    expect(useHistoryStore.getState().logs.map((l) => l.id)).toEqual(['log-b']);
+    expect((await getRepositories().sessions.listSessions()).map((l) => l.id)).toEqual(['log-b']);
+  });
+});
+
+describe('PulseCoach – exercise archive', () => {
+  it('lists every exercise and filters by search, category and muscle', async () => {
+    renderRouter(routes, { initialUrl: '/exercises' });
+    await waitFor(() => expect(screen.getByTestId('archive-list')).toBeTruthy());
+    expect(screen.getByText(`${EXERCISES.length} övningar`)).toBeTruthy();
+    expect(screen.getByTestId('archive-squat')).toBeTruthy();
+
+    // Search by name (and by muscle name in the active language)
+    fireEvent.changeText(screen.getByTestId('archive-search'), 'knäb');
+    expect(screen.getByTestId('archive-squat')).toBeTruthy();
+    expect(screen.queryByTestId('archive-plank')).toBeNull();
+
+    fireEvent.changeText(screen.getByTestId('archive-search'), 'rygg');
+    expect(screen.queryByTestId('archive-squat')).toBeNull();
+
+    // Category + muscle chips narrow the same list
+    fireEvent.changeText(screen.getByTestId('archive-search'), '');
+    fireEvent.press(screen.getByTestId('archive-category-cardio'));
+    expect(screen.queryByTestId('archive-squat')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('archive-category-all'));
+    fireEvent.press(screen.getByTestId('archive-muscle-glutes'));
+    expect(screen.queryByTestId('archive-plank')).toBeNull();
+
+    // A row opens the same instruction sheet as the workout overview
+    fireEvent.press(screen.getByTestId('archive-squat'));
+    const sheet = await screen.findByTestId('exercise-sheet');
+    expect(within(sheet).getByText('Så gör du')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('exercise-sheet-close'));
+  });
+});
+
+describe('PulseCoach – sharing custom workouts', () => {
+  it('shows a share code for a custom workout and imports it back', async () => {
+    renderRouter(routes, { initialUrl: '/' });
+    await waitFor(() => expect(screen.getByTestId('create-workout')).toBeTruthy());
+
+    let saved!: Workout;
+    await act(async () => {
+      saved = await useCustomWorkoutStore.getState().save({
+        ...useCustomWorkoutStore.getState().newDraft(),
+        name: 'Dela mig',
+        exercises: [
+          { exerciseId: 'squat', sets: 4, prescription: { kind: 'reps', reps: 12 }, restSeconds: 45 },
+          { exerciseId: 'plank', sets: 3, prescription: { kind: 'time', seconds: 30 }, restSeconds: 30 },
+        ],
+      });
+    });
+
+    fireEvent.press(await screen.findByTestId(`workout-${saved.id}-share`));
+    const code = (await screen.findByTestId('share-code')).props.children as string;
+    expect(code).toMatch(/^PULSECOACH:WORKOUT:1:/);
+    fireEvent.press(screen.getByTestId('share-close'));
+    await waitFor(() => expect(screen.queryByTestId('share-modal')).toBeNull());
+
+    // The friend (or a second device) opens Import and pastes the code
+    fireEvent.press(screen.getByTestId('import-workout'));
+    await waitFor(() => expect(screen.getByTestId('import-code')).toBeTruthy());
+
+    fireEvent.changeText(screen.getByTestId('import-code'), 'skräp');
+    fireEvent.press(screen.getByTestId('import-parse'));
+    expect(screen.getByTestId('import-error')).toBeTruthy();
+
+    fireEvent.changeText(screen.getByTestId('import-code'), code);
+    fireEvent.press(screen.getByTestId('import-parse'));
+    expect(screen.getByTestId('import-preview')).toBeTruthy();
+    expect(screen.getByText('Dela mig')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('import-save'));
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    const mine = useCustomWorkoutStore.getState().workouts;
+    expect(mine).toHaveLength(2);
+    expect(mine[0]?.title.sv).toBe('Dela mig');
+    expect(mine[0]?.blocks[0]?.exercises).toHaveLength(2);
+    expect(mine[0]?.blocks[0]?.exercises[0]).toMatchObject({ sets: 4, prescription: { kind: 'reps', reps: 12 } });
+    // …and it is a normal custom workout that can be edited and re-shared
+    expect(await screen.findByTestId('edit-workout')).toBeTruthy();
+    expect(screen.getByTestId('share-workout')).toBeTruthy();
+  }, 30_000);
+});
+
+describe('PulseCoach – admin: editing the built-in workouts', () => {
+  it('edits a built-in program in place, persists it and resets it', async () => {
+    renderRouter(routes, { initialUrl: '/settings' });
+    await waitFor(() => expect(screen.getByTestId('toggle-admin-mode')).toBeTruthy());
+    expect(useSettingsStore.getState().settings.adminMode).toBe(false);
+
+    fireEvent(screen.getByTestId('toggle-admin-mode'), 'valueChange', true);
+    expect(useSettingsStore.getState().settings.adminMode).toBe(true);
+    fireEvent.press(await screen.findByTestId('open-admin'));
+
+    await waitFor(() => expect(screen.getByTestId('admin-core-crusher')).toBeTruthy());
+    expect(screen.queryByTestId('admin-core-crusher-badge')).toBeNull();
+
+    // Admin → builder, prefilled with the flattened program
+    fireEvent.press(screen.getByTestId('admin-core-crusher-edit'));
+    await waitFor(() => expect(screen.getByTestId('builder-override-hint')).toBeTruthy());
+    const flattened = getWorkout('core-crusher')!.blocks.reduce(
+      (n, b) => n + b.exercises.length * Math.max(1, b.rounds ?? 1),
+      0,
+    );
+    await waitFor(() => expect(screen.getByTestId(`draft-row-${flattened - 1}`)).toBeTruthy());
+
+    // Drop the first (warm-up) exercise and save
+    fireEvent.press(screen.getByTestId('draft-row-0-remove'));
+    fireEvent.press(screen.getByTestId('builder-save'));
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+
+    const store = useCustomWorkoutStore.getState();
+    expect(store.overrides.map((o) => o.workoutId)).toEqual(['core-crusher']);
+    expect(store.workouts).toHaveLength(0); // an edit is not a new custom workout
+    const effective = store.effectiveWorkout('core-crusher')!;
+    expect(effective.title.sv).toBe('Core Crusher'); // the program keeps its identity
+    expect(effective.blocks[0]!.exercises).toHaveLength(flattened - 1);
+    expect((await getRepositories().customWorkouts.listOverrides()).map((o) => o.workoutId)).toEqual([
+      'core-crusher',
+    ]);
+
+    // Back in the admin list the program is flagged as edited
+    act(() => {
+      router.back();
+    });
+    await waitFor(() => expect(screen.getByTestId('admin-core-crusher-badge')).toBeTruthy());
+
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      buttons?.find((b) => b.style === 'destructive')?.onPress?.();
+    });
+    fireEvent.press(screen.getByTestId('admin-core-crusher-reset'));
+    alertSpy.mockRestore();
+    await waitFor(() => expect(useCustomWorkoutStore.getState().overrides).toHaveLength(0));
+    expect(useCustomWorkoutStore.getState().effectiveWorkout('core-crusher')!.blocks[0]!.exercises).toHaveLength(2);
+    expect(await getRepositories().customWorkouts.listOverrides()).toHaveLength(0);
+  }, 30_000);
+
+  it('offers an in-place edit on the built-in workout page while admin mode is on', async () => {
+    renderRouter(routes, { initialUrl: '/workout/core-crusher' });
+    await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
+    expect(screen.queryByTestId('admin-edit-workout')).toBeNull(); // visible only in admin mode
+
+    act(() => {
+      useSettingsStore.getState().setAdminMode(true);
+    });
+    expect(await screen.findByTestId('admin-edit-workout')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('admin-edit-workout'));
+    await waitFor(() => expect(screen.getByTestId('builder-override-hint')).toBeTruthy());
+  });
 });
 
 describe('PulseCoach – custom workouts', () => {
