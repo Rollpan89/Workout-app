@@ -163,7 +163,7 @@ export const WORKOUTS: readonly Workout[] = [
 
   {
     id: 'icf-5x5-strength',
-    title: lz('Ice Cream Fitness 5×5', 'Ice Cream Fitness 5×5'),
+    title: lz('Novice Iron', 'Novice Iron'),
     tagline: lz('Nybörjarkraft, tre pass i veckan.', 'Novice strength, three days a week.'),
     description: lz(
       'Jason Blahas klassiska 5×5-program från Muscle & Strength: 12 veckor, tre pass per vecka som alternerar A/B med linjär viktprogression. Vila 3–5 min på femmorna och 1–2 min på tilläggen. Denna session är Workout A (Workout B byter in 1×5 marklyft och stående press).',
@@ -179,7 +179,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'bill-starr-5x5',
-    title: lz('Bill Starr 5×5', 'Bill Starr 5×5'),
+    title: lz('Starr Power', 'Starr Power'),
     tagline: lz('Beprövad linjär kraft.', 'Old-school linear strength.'),
     description: lz(
       'Bill Starrs 5×5 för medelavancerade (Muscle & Strength): 12 veckor, tre pass – måndag kraft 5×5, onsdag volym 4×5 och fredag toppar till tunga triplar. Denna session är måndagens kraftpass med assistans för svank och mage.',
@@ -195,7 +195,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'phul-upper-power',
-    title: lz('P.H.U.L. – Upper Power', 'P.H.U.L. – Upper Power'),
+    title: lz('Upper Power', 'Upper Power'),
     tagline: lz('Kraft och muskelmassa, 4 dagar/vecka.', 'Strength and size, 4 days a week.'),
     description: lz(
       'Power Hypertrophy Upper Lower är M&S mest hämtade 4-dagarsprogram (12 veckor): över-/underkropp x kraft + hypertrofi. Denna session är Day 1 – Upper Power. Lat pulldown i originalet är bytt mot chins; vila 2–3 min före de tunga lyften.',
@@ -211,7 +211,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'ms-full-body-a',
-    title: lz('M&S Full Body – A', 'M&S Full Body – A'),
+    title: lz('Mass Builder', 'Mass Builder'),
     tagline: lz(
       'Tre pass. Alla muskler. 20-reps-knäböj.',
       'Three sessions. All muscles. 20-rep squats.',
@@ -230,7 +230,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'total-package-d1',
-    title: lz('The Total Package – Dag 1', 'The Total Package – Day 1'),
+    title: lz('Total Package', 'Total Package'),
     tagline: lz('5×5 för styrka, 4×10 för massa.', '5×5 for strength, 4×10 for size.'),
     description: lz(
       'Total Package (Muscle & Strength, 8 veckor, 3 dagar/vecka) varvar ett tungt 5×5-huvudlyft med 4×10-hypertrofi för hela kroppen. Denna session är Dag 1; kabelrodden är bytt mot hantelrodd och benpressen mot knäböj + utfall.',
@@ -246,7 +246,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'pmb-chest-triceps',
-    title: lz('Power Muscle Burn – Bröst & Tris', 'Power Muscle Burn – Chest & Tri'),
+    title: lz('Chest Burn', 'Chest Burn'),
     tagline: lz(
       'Kraft-set, muskel-set, bränn-set. 40 reps.',
       'Power sets, muscle sets, 40-rep burn sets.',
@@ -265,7 +265,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'ppl-push-a',
-    title: lz('6-Dagars PPL – Push A', '6-Day PPL – Push A'),
+    title: lz('Push Volume', 'Push Volume'),
     tagline: lz('Rep goals: 15, 25 och 50.', 'Rep goals: 15, 25 and 50.'),
     description: lz(
       'Det högvolymsiga 6-dagars push/pull/legs-programmet på Muscle & Strength (12 veckor) styrs av totala repmål: 5 set à 15 totalt på huvudlyftet (plus en back-off-set vid 80 %), 25–30 reps på medelövningarna och 5×50 med bara 15–30 sek vila som avslutning. Denna session är Push A – bröst, axlar & triceps.',
@@ -281,7 +281,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'mass10-chest',
-    title: lz('10-veckors massa – Bröst', '10-Week Mass – Chest'),
+    title: lz('Chest Mass', 'Chest Mass'),
     tagline: lz('Pyramid: 10, 8, 8, 6.', 'Pyramid: 10, 8, 8, 6.'),
     description: lz(
       'M&S-program för hardgainern: 10 veckor, fyra dagar, varje muskelgrupp en gång i veckan med tunga basövningar och pyramidset (10/8/8/6, tyngre för varje set). Denna session är Måndag – bröst & triceps; veckan fortsätter med rygg/biceps, axlar/underarmar och ben.',
@@ -297,7 +297,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'dumbbell5-push',
-    title: lz('Hantel-5:an – Push', 'Dumbbell 5-Day – Push'),
+    title: lz('Dumbbell Push', 'Dumbbell Push'),
     tagline: lz('Bara hantlar. Fem dagar.', 'Dumbbells only. Five days.'),
     description: lz(
       'M&S hantelprogram (12 veckor, 5 dagar): push, ben/core, pull, ben/core och en hel-overkroppsdag. Denna session är Dag 1 – bröst, axlar & triceps med 8–12 reps och 45–90 sek vila. Golvpressen i originalet körs här som armhävningar.',
@@ -313,7 +313,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'dumbbell3-fullbody-a',
-    title: lz('Hantel Full Body – Dag 1', 'Dumbbell Full Body – Day 1'),
+    title: lz('Dumbbell Blast', 'Dumbbell Blast'),
     tagline: lz('Ett par hantlar räcker.', 'One pair of dumbbells does it.'),
     description: lz(
       'Perfekt hemma eller på resan: M&S 3-dagars hantelsprogram (8 veckor) med lagom volym för muskeltillväxt – tre set à 8–10 reps, två à 8. Denna session är Dag 1; bench-isoleringarna ligger på Dag 2 och 3.',
@@ -329,7 +329,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'squat-heavy-day',
-    title: lz('Complete Squat – Tunga dagen', 'Complete Squat – Heavy Day'),
+    title: lz('Heavy Squats', 'Heavy Squats'),
     tagline: lz('75–90 % i 8 veckor. Nytt 1RM.', '75–90 % for 8 weeks. New 1RM.'),
     description: lz(
       'The Complete Squat Program på Muscle & Strength: 8 veckor, 4 pass/vecka med en tung knäböjsdag (75–90 % 1RM, 3 min vila), en explosiv speed-dag och två helkroppspass. Denna session är den tunga dagen; knäböjet toppas enligt veckogrammet mot nya max.',
@@ -345,7 +345,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'deadlift-spec-a',
-    title: lz('Deadlift-Specialisering – A', 'Deadlift Specialization – A'),
+    title: lz('Deadlift Drive', 'Deadlift Drive'),
     tagline: lz('Marklyft tre gånger i veckan.', 'Deadlift three times a week.'),
     description: lz(
       'M&S 8-veckorsprogram för maximal styrka i marklyften: tre marklyfts-dagar (tungt, speed respektive defizit/paus) och två överkroppsdagar, alla under 60 min. Denna session är tunga dag A med 2–3 min vila; veckogrammet bygger mot nytt 1RM på vecka 8.',
@@ -361,7 +361,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'navy-seal-conditioning',
-    title: lz('Navy SEAL – Kondition', 'Navy SEAL – Conditioning'),
+    title: lz('Seal Engine', 'Seal Engine'),
     tagline: lz('Kroppsvikt, sprintar, löpning.', 'Bodyweight, sprints, running.'),
     description: lz(
       'Sex-veckorsprogrammet från Muscle & Strength bygger funktionell styrka, snabbhet och uthållighet i fem pass/vecka (speed, power, strength, hypertrofi och ett konditionspass). Denna session är konditionscirkeln – kör den 2 varv och avsluta med 3–5 km jogg i lugnt tempo.',
@@ -377,7 +377,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'tactical-strength',
-    title: lz('Tactical Physique – Styrka', 'Tactical Physique – Strength'),
+    title: lz('Tactical Iron', 'Tactical Iron'),
     tagline: lz('Lyft tungt. Spring fort.', 'Lift heavy. Run fast.'),
     description: lz(
       'The Tactical Physique på Muscle & Strength kombinerar funktionell styrka, supersets och kondition. Denna session är veckans styrkepass: knäböj och rumänska i 4×5, superset-armhävningar/chins efteråt, core och avslutande 8×20 sek sprintintervaller.',
@@ -409,7 +409,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'body-blaster-circuit',
-    title: lz('Body Blaster – Circuit', 'Body Blaster – Circuit'),
+    title: lz('Body Blaster', 'Body Blaster'),
     tagline: lz('Fetförbränning utan utrustning.', 'Fat loss with zero equipment.'),
     description: lz(
       'Body Blaster (Muscle & Strength, 6 veckor, 3 pass/vecka) varvar EMOM-varv och cirklar med sprintar, burpees, hoppluck och skuggboxning. Denna session är cirkeldagen: 5 varv, cirka 25 minuter, 2 min vila efter sista övningen på varje varv.',
@@ -425,7 +425,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'fat-destroyer-upper-a',
-    title: lz('Fat Destroyer – Upper A', 'Fat Destroyer – Upper A'),
+    title: lz('Fat Destroyer', 'Fat Destroyer'),
     tagline: lz('Fetförbränning. Behåll musklerna.', 'Burn fat. Keep the muscle.'),
     description: lz(
       '12 Week Fat Destroyer är M&S kompletta program för att bli av med fett: lyft 4 dagar/vecka (upper/lower A & B) plus kost- och kardioplan. Denna session är Upper A – håll samma vikt varje set, lägg på när 8–10 känns lätt och kör 20–30 min cardio efteråt.',
@@ -441,7 +441,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'core-destroyer-abc',
-    title: lz('Core Destroyer – ABC', 'Core Destroyer – ABC'),
+    title: lz('Core Destroyer', 'Core Destroyer'),
     tagline: lz('Ab Blasting Circuit på 10 min.', 'A 10-minute Ab Blasting Circuit.'),
     description: lz(
       'Core Destroyer (Muscle & Strength, 8 veckor, 2 pass/vecka) har en raka-set-session och denna Ab Blasting Circuit: fem magövningar på tid, back-to-back, 3 varv med 2 min vila mellan. Kör den efter ett mindre styrkepass eller ensam.',
@@ -457,7 +457,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'kb-core-circuit',
-    title: lz('KB Core Circuit', 'KB Core Circuit'),
+    title: lz('Kettlebell Core', 'Kettlebell Core'),
     tagline: lz('En kula. Hela core.', 'One bell. A complete core.'),
     description: lz(
       '4 Week Complete Kettlebell Ab & Core från Muscle & Strength: fyra veckor, tre pass i veckan, ett kettlebell – rörelser i tre plan, från stående till liggande. Denna session är hela cirkeln – 8 övningar, 4 varv, ca 10 reps per sida, så lite vila som möjligt.',
@@ -473,7 +473,7 @@ export const WORKOUTS: readonly Workout[] = [
   },
   {
     id: 'womens-legs-glutes',
-    title: lz('Women’s 12 – Ben & Rumpa', 'Women’s 12 – Legs & Glutes'),
+    title: lz('Glute Builder', 'Glute Builder'),
     tagline: lz(
       'Måndag: knäböj, thrust, steg upp – plus HIIT.',
       'Monday: squats, thrusts, steps. + HIIT.',

@@ -239,12 +239,21 @@ describe('PulseCoach – core flow', () => {
     expect(screen.getByText('Lower Power')).toBeTruthy();
   });
 
-  it('shows the three-step intro on first run only', async () => {
+  it('shows the intro on first run, language first, and only once', async () => {
     renderRouter(routes, { initialUrl: '/' });
     await waitFor(() => expect(screen.getByTestId('onboarding')).toBeTruthy());
+    expect(screen.getByText('Välj språk')).toBeTruthy();
+    expect(screen.getByTestId('onboarding-locale-sv')).toBeTruthy();
+
+    // Switching language rewrites the intro immediately; continue in Swedish.
+    fireEvent.press(screen.getByTestId('onboarding-locale-en'));
+    expect(screen.getByText('Choose your language')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('onboarding-locale-sv'));
+    fireEvent.press(screen.getByTestId('onboarding-next'));
+
     expect(screen.getByText('Din coach i örat')).toBeTruthy();
 
-    // Step 1: name → Step 2: interaction level → Step 3: tips → done
+    // Name → interaction level → tips → done
     fireEvent.changeText(screen.getByTestId('onboarding-name'), 'Rollo');
     fireEvent.press(screen.getByTestId('onboarding-next'));
     expect(screen.getByText('Hur mycket vill du styra?')).toBeTruthy();
@@ -256,6 +265,7 @@ describe('PulseCoach – core flow', () => {
 
     const settings = useSettingsStore.getState().settings;
     expect(settings.onboardingDone).toBe(true);
+    expect(settings.locale).toBe('sv');
     expect(settings.profile.displayName).toBe('Rollo');
     expect(settings.interactionLevel).toBe('assisted');
     const stored = await getRepositories().settings.load();
@@ -734,16 +744,14 @@ describe('PulseCoach – admin: editing the built-in workouts', () => {
     await waitFor(() => expect(screen.getByTestId('admin-core-crusher')).toBeTruthy());
     expect(screen.queryByTestId('admin-core-crusher-badge')).toBeNull();
 
-    // Admin → builder, prefilled with the flattened program
+    // Admin → builder. Warm-up stays its own section; the core rounds are a setting, not copied rows.
     fireEvent.press(screen.getByTestId('admin-core-crusher-edit'));
     await waitFor(() => expect(screen.getByTestId('builder-override-hint')).toBeTruthy());
-    const flattened = getWorkout('core-crusher')!.blocks.reduce(
-      (n, b) => n + b.exercises.length * Math.max(1, b.rounds ?? 1),
-      0,
-    );
-    await waitFor(() => expect(screen.getByTestId(`draft-row-${flattened - 1}`)).toBeTruthy());
+    // WARMUP_SHORT (2) + CORE_CRUSHER (5), rounds kept on the draft → 7 rows
+    await waitFor(() => expect(screen.getByTestId('draft-row-6')).toBeTruthy());
+    expect(screen.queryByTestId('draft-row-7')).toBeNull();
 
-    // Drop the first (warm-up) exercise and save
+    // Drop the first warm-up exercise and save
     fireEvent.press(screen.getByTestId('draft-row-0-remove'));
     fireEvent.press(screen.getByTestId('builder-save'));
     await waitFor(() => expect(screen.getByTestId('start-workout')).toBeTruthy());
@@ -753,7 +761,10 @@ describe('PulseCoach – admin: editing the built-in workouts', () => {
     expect(store.workouts).toHaveLength(0); // an edit is not a new custom workout
     const effective = store.effectiveWorkout('core-crusher')!;
     expect(effective.title.sv).toBe('Core Crusher'); // the program keeps its identity
-    expect(effective.blocks[0]!.exercises).toHaveLength(flattened - 1);
+    expect(effective.blocks.map((b) => b.kind)).toEqual(['warmup', 'main']);
+    expect(effective.blocks[0]!.exercises).toHaveLength(1);
+    expect(effective.blocks[1]!.rounds).toBe(2);
+    expect(effective.blocks[1]!.exercises).toHaveLength(5);
     expect((await getRepositories().customWorkouts.listOverrides()).map((o) => o.workoutId)).toEqual([
       'core-crusher',
     ]);
@@ -897,12 +908,9 @@ describe('PulseCoach – custom workouts', () => {
     fireEvent.press(screen.getByTestId('duplicate-workout'));
     await waitFor(() => expect(screen.getByTestId('builder-name')).toBeTruthy());
     expect(screen.getByTestId('builder-name').props.value).toBe('Core Crusher (kopia)');
-    // Core Crusher = warm-up (2) + 2 rounds × 5 core moves + cooldown (3) → flattened
-    const sourceSteps = getWorkout('core-crusher')!.blocks.reduce(
-      (n, b) => n + b.exercises.length * Math.max(1, b.rounds ?? 1),
-      0,
-    );
-    await waitFor(() => expect(screen.getByTestId(`draft-row-${sourceSteps - 1}`)).toBeTruthy());
+    // Warm-up (2) + training (5). The 2 rounds stay a setting, they are not copied into extra rows.
+    await waitFor(() => expect(screen.getByTestId('draft-row-6')).toBeTruthy());
+    expect(screen.queryByTestId('draft-row-7')).toBeNull();
 
     // Rename + drop the first exercise, then save
     fireEvent.changeText(screen.getByTestId('builder-name'), 'Min core');
@@ -913,7 +921,8 @@ describe('PulseCoach – custom workouts', () => {
     const mine = useCustomWorkoutStore.getState();
     expect(mine.drafts).toHaveLength(1);
     expect(mine.drafts[0]?.sourceId).toBe('core-crusher');
-    expect(mine.drafts[0]?.exercises).toHaveLength(sourceSteps - 1);
+    expect(mine.drafts[0]?.rounds).toBe(2);
+    expect(mine.drafts[0]?.exercises).toHaveLength(6);
     expect(mine.workouts[0]?.accent).not.toBe(getWorkout('core-crusher')!.accent); // gets its own colour
 
     // Edit again: the builder loads the saved draft

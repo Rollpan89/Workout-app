@@ -8,10 +8,14 @@ import { WORKOUT_ACCENTS } from './workout';
  * ---------------
  * A user-built workout is a *simplified* editing model (`CustomWorkoutDraft`)
  * that compiles down to the same `Workout` shape the engine, planner and
- * metrics already understand. Keeping the draft flat (a single ordered list
- * of exercises) makes the builder UI easy while preserving full
- * compatibility with built-in programs.
+ * metrics already understand. The draft is three ordered lists in one array
+ * (warm-up, training, stretch) so rounds can repeat only the training.
  */
+
+/** Where an exercise sits. Absent means the training block (older drafts). */
+export type DraftSection = 'warmup' | 'main' | 'stretch';
+
+export const DRAFT_SECTIONS: readonly DraftSection[] = ['warmup', 'main', 'stretch'] as const;
 
 export interface DraftExercise {
   readonly exerciseId: string;
@@ -19,6 +23,12 @@ export interface DraftExercise {
   readonly prescription: SetPrescription;
   /** Rest after each set in seconds. */
   readonly restSeconds: number;
+  /**
+   * Warm-up and stretch run once. Training (`main`, or omitted) is what
+   * `rounds` repeats. Omitted on older drafts and on training rows so a
+   * share code without the field still means "training".
+   */
+  readonly section?: DraftSection;
 }
 
 export interface CustomWorkoutDraft {
@@ -31,8 +41,8 @@ export interface CustomWorkoutDraft {
   /** Rest between exercises (transition) in seconds. */
   readonly transitionSeconds: number;
   /**
-   * Run the whole list this many times (circuit style). Optional for
-   * backwards compatibility with stored drafts; treated as 1 when absent.
+   * Repeat the training section this many times. Warm-up and stretch always
+   * run once. Optional for older drafts; treated as 1 when absent.
    */
   readonly rounds?: number;
   readonly createdAt: string;
@@ -69,6 +79,27 @@ export function draftRounds(draft: Pick<CustomWorkoutDraft, 'rounds'>): number {
   const r = draft.rounds ?? 1;
   if (!Number.isFinite(r)) return 1;
   return Math.min(DRAFT_LIMITS.rounds.max, Math.max(DRAFT_LIMITS.rounds.min, Math.round(r)));
+}
+
+/** Training when the field is missing – that is how drafts used to be stored. */
+export function exerciseSection(item: Pick<DraftExercise, 'section'>): DraftSection {
+  return item.section === 'warmup' || item.section === 'stretch' ? item.section : 'main';
+}
+
+export function exercisesInSection(
+  exercises: readonly DraftExercise[],
+  section: DraftSection,
+): readonly DraftExercise[] {
+  return exercises.filter((item) => exerciseSection(item) === section);
+}
+
+/** Drop the section field for training so older readers still treat the row as main. */
+export function withSection(item: DraftExercise, section: DraftSection): DraftExercise {
+  if (section === 'main') {
+    const { section: _ignored, ...rest } = item;
+    return rest;
+  }
+  return { ...item, section };
 }
 
 export type DraftValidationError = 'nameRequired' | 'noExercises' | 'tooManyExercises';
@@ -133,10 +164,29 @@ export function defaultDraftExercise(exercise: Exercise): DraftExercise {
   }
 }
 
+function sectionForKind(kind: WorkoutBlock['kind']): DraftSection {
+  if (kind === 'warmup') return 'warmup';
+  if (kind === 'cooldown' || kind === 'stretch') return 'stretch';
+  return 'main';
+}
+
+function toDraftExercise(block: WorkoutBlock, we: WorkoutBlock['exercises'][number], section: DraftSection): DraftExercise {
+  const row: DraftExercise = {
+    exerciseId: we.exerciseId,
+    sets: we.sets,
+    prescription: we.prescription,
+    restSeconds: we.restSeconds ?? block.restSeconds,
+  };
+  return withSection(row, section);
+}
+
 /**
- * Flatten a built-in (or custom) workout into a draft so the user can
- * "copy & customise" it. Rounds are expanded into repeated exercises so the
- * simple editor can represent circuits without a rounds concept.
+ * Turn any workout into an editable draft.
+ *
+ * Warm-up and stretch stay their own sections and are never repeated by
+ * rounds. Training keeps a single rounds value when every training block
+ * agrees; mixed circuits (a 3-round block plus a finisher) are expanded so
+ * the amount of work stays truthful.
  */
 export function draftFromWorkout(
   source: Workout,
@@ -147,23 +197,21 @@ export function draftFromWorkout(
 ): CustomWorkoutDraft {
   const exercises: DraftExercise[] = [];
   let transition = 20;
-  // A single circuit block keeps its rounds as a draft-level setting;
-  // anything more complex is flattened so the simple list stays truthful.
-  const keepRounds = source.blocks.length === 1 && (source.blocks[0]?.rounds ?? 1) > 1;
+  const mainBlocks = source.blocks.filter((block) => sectionForKind(block.kind) === 'main');
+  const mainRoundValues = mainBlocks.map((block) => Math.max(1, block.rounds ?? 1));
+  const uniformRounds =
+    mainRoundValues.length > 0 && mainRoundValues.every((rounds) => rounds === mainRoundValues[0]);
+  const rounds = uniformRounds ? (mainRoundValues[0] ?? 1) : 1;
+
   for (const block of source.blocks) {
-    const rounds = keepRounds ? 1 : Math.max(1, block.rounds ?? 1);
-    transition = block.kind === 'main' ? block.transitionSeconds : transition;
-    for (let r = 0; r < rounds; r += 1) {
-      for (const we of block.exercises) {
-        exercises.push({
-          exerciseId: we.exerciseId,
-          sets: we.sets,
-          prescription: we.prescription,
-          restSeconds: we.restSeconds ?? block.restSeconds,
-        });
-      }
+    const section = sectionForKind(block.kind);
+    if (section === 'main') transition = block.transitionSeconds;
+    const expand = section === 'main' && uniformRounds ? 1 : Math.max(1, block.rounds ?? 1);
+    for (let r = 0; r < expand; r += 1) {
+      for (const we of block.exercises) exercises.push(toDraftExercise(block, we, section));
     }
   }
+
   return {
     id,
     name,
@@ -172,33 +220,68 @@ export function draftFromWorkout(
     accent,
     exercises,
     transitionSeconds: transition,
-    ...(keepRounds ? { rounds: source.blocks[0]?.rounds } : {}),
+    ...(rounds > 1 ? { rounds } : {}),
     createdAt: now,
     updatedAt: now,
     sourceId: source.id,
   };
 }
 
-/** Compile a draft into a runnable `Workout`. */
-export function compileDraft(draft: CustomWorkoutDraft, lookup: (id: string) => Exercise | undefined): Workout {
-  const known = draft.exercises.filter((e) => lookup(e.exerciseId) !== undefined);
-  const exercises: WorkoutExercise[] = known.map((e) => ({
+function toWorkoutExercise(e: DraftExercise): WorkoutExercise {
+  return {
     exerciseId: e.exerciseId,
     sets: e.sets,
     prescription: e.prescription,
     restSeconds: e.restSeconds,
-  }));
-
-  const rounds = draftRounds(draft);
-  const block: WorkoutBlock = {
-    id: `${draft.id}-main`,
-    title: rounds > 1 ? lz('Cirkel', 'Circuit') : lz('Ditt pass', 'Your workout'),
-    kind: 'main',
-    exercises,
-    restSeconds: 60,
-    transitionSeconds: draft.transitionSeconds,
-    ...(rounds > 1 ? { rounds } : {}),
   };
+}
+
+/** Compile a draft into a runnable `Workout`. Warm-up and stretch run once; rounds repeat only training. */
+export function compileDraft(draft: CustomWorkoutDraft, lookup: (id: string) => Exercise | undefined): Workout {
+  const known = draft.exercises.filter((e) => lookup(e.exerciseId) !== undefined);
+  const warmup = known.filter((e) => exerciseSection(e) === 'warmup');
+  const training = known.filter((e) => exerciseSection(e) === 'main');
+  const stretch = known.filter((e) => exerciseSection(e) === 'stretch');
+  const rounds = draftRounds(draft);
+  const hasBookends = warmup.length > 0 || stretch.length > 0;
+
+  const blocks: WorkoutBlock[] = [];
+  if (warmup.length > 0) {
+    blocks.push({
+      id: `${draft.id}-warmup`,
+      title: lz('Uppvärmning', 'Warm-up'),
+      kind: 'warmup',
+      exercises: warmup.map(toWorkoutExercise),
+      restSeconds: 0,
+      transitionSeconds: draft.transitionSeconds,
+    });
+  }
+  // A draft with no known exercises still compiles to one empty main block.
+  if (training.length > 0 || known.length === 0) {
+    blocks.push({
+      id: `${draft.id}-main`,
+      title: hasBookends
+        ? lz('Träning', 'Training')
+        : rounds > 1
+          ? lz('Cirkel', 'Circuit')
+          : lz('Ditt pass', 'Your workout'),
+      kind: 'main',
+      exercises: training.map(toWorkoutExercise),
+      restSeconds: 60,
+      transitionSeconds: draft.transitionSeconds,
+      ...(rounds > 1 ? { rounds } : {}),
+    });
+  }
+  if (stretch.length > 0) {
+    blocks.push({
+      id: `${draft.id}-stretch`,
+      title: lz('Stretch', 'Stretch'),
+      kind: 'stretch',
+      exercises: stretch.map(toWorkoutExercise),
+      restSeconds: 0,
+      transitionSeconds: draft.transitionSeconds,
+    });
+  }
 
   const equipment = new Set<Exercise['equipment'][number]>();
   const muscleLoad = new Map<MuscleGroup, number>();
@@ -226,7 +309,7 @@ export function compileDraft(draft: CustomWorkoutDraft, lookup: (id: string) => 
     difficulty: draft.difficulty,
     equipment: realEquipment.length === 0 ? ['none'] : realEquipment,
     primaryMuscles,
-    blocks: [block],
+    blocks,
     estimatedMinutes: estimateDraftMinutes(draft, lookup),
     accent: draft.accent,
     custom: true,
@@ -234,18 +317,45 @@ export function compileDraft(draft: CustomWorkoutDraft, lookup: (id: string) => 
   };
 }
 
-/** Rough duration at intensity 1.0 (mirrors the planner's estimate). */
-export function estimateDraftMinutes(draft: CustomWorkoutDraft, lookup: (id: string) => Exercise | undefined): number {
+/** Work inside one pass of a section, without the rest that follows the last exercise. */
+function sectionWorkSeconds(
+  exercises: readonly DraftExercise[],
+  transitionSeconds: number,
+  lookup: (id: string) => Exercise | undefined,
+): number {
   let seconds = 0;
-  draft.exercises.forEach((e, i) => {
+  const known = exercises.filter((e) => lookup(e.exerciseId) !== undefined);
+  known.forEach((e, i) => {
     const ex = lookup(e.exerciseId);
     if (!ex) return;
     const work = e.prescription.kind === 'reps' ? e.prescription.reps * ex.secondsPerRep : e.prescription.seconds;
     seconds += e.sets * (work + 5); // 5 s announce/get-ready per set
     seconds += Math.max(0, e.sets - 1) * e.restSeconds;
-    if (i < draft.exercises.length - 1) seconds += draft.transitionSeconds;
+    if (i < known.length - 1) seconds += transitionSeconds;
   });
+  return seconds;
+}
+
+/**
+ * Rough duration at intensity 1.0 (mirrors the planner).
+ * Rounds multiply only the training section. A section that is followed by
+ * another adds one transition per round; the last section only adds the
+ * transitions between its own rounds.
+ */
+export function estimateDraftMinutes(draft: CustomWorkoutDraft, lookup: (id: string) => Exercise | undefined): number {
   const rounds = draftRounds(draft);
-  seconds = seconds * rounds + Math.max(0, rounds - 1) * draft.transitionSeconds;
+  const groups = DRAFT_SECTIONS.map((section) => ({
+    section,
+    rounds: section === 'main' ? rounds : 1,
+    exercises: draft.exercises.filter((e) => exerciseSection(e) === section),
+  })).filter((group) => group.exercises.some((e) => lookup(e.exerciseId) !== undefined));
+
+  let seconds = 0;
+  groups.forEach((group, i) => {
+    const work = sectionWorkSeconds(group.exercises, draft.transitionSeconds, lookup);
+    const followed = i < groups.length - 1;
+    const trailing = (followed ? group.rounds : Math.max(0, group.rounds - 1)) * draft.transitionSeconds;
+    seconds += work * group.rounds + trailing;
+  });
   return Math.max(1, Math.round(seconds / 60));
 }

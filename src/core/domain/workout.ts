@@ -28,7 +28,7 @@ export interface WorkoutExercise {
 export interface WorkoutBlock {
   readonly id: string;
   readonly title: LocalizedString;
-  readonly kind: 'warmup' | 'main' | 'finisher' | 'cooldown';
+  readonly kind: 'warmup' | 'main' | 'finisher' | 'cooldown' | 'stretch';
   readonly exercises: readonly WorkoutExercise[];
   /** Default rest between sets in this block (seconds). */
   readonly restSeconds: number;

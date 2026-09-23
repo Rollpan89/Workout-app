@@ -1,29 +1,37 @@
 import { useState } from 'react';
-import { Modal, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { InteractionLevel } from '@/core/domain';
+import type { InteractionLevel, Locale } from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
 import { useSettingsStore } from '@/state/settingsStore';
-import { colors, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 import { InteractionPicker } from '@/ui/components';
 import { Button, ProgressBar, Text } from '@/ui/primitives';
 
-const STEPS = 3;
+const STEPS = 4;
+
+/** Endonyms – a language picker must stay readable before the locale is chosen. */
+const LANGUAGES: readonly { readonly id: Locale; readonly label: string }[] = [
+  { id: 'sv', label: 'Svenska' },
+  { id: 'en', label: 'English' },
+];
 
 /**
- * First-run intro, three screens:
- *  1. What the app is (voice coach, hands-free) + optional name
- *  2. Pick the interaction level (the single most important setting)
- *  3. The three things to know during a workout (double-tap, ±, tempo)
+ * First-run intro, four screens:
+ *  1. Language (so every later screen is already in the right language)
+ *  2. What the app is (voice coach, hands-free) + optional name
+ *  3. Pick the interaction level (the single most important setting)
+ *  4. The three things to know during a workout (double-tap, ±, tempo)
  * Shown once; `settings.onboardingDone` is persisted when finished or skipped.
  */
 export function OnboardingOverlay() {
   const insets = useSafeAreaInsets();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const done = useSettingsStore((s) => s.settings.onboardingDone);
   const interaction = useSettingsStore((s) => s.settings.interactionLevel);
   const displayName = useSettingsStore((s) => s.settings.profile.displayName);
+  const setLocale = useSettingsStore((s) => s.setLocale);
   const setInteractionLevel = useSettingsStore((s) => s.setInteractionLevel);
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const finish = useSettingsStore((s) => s.setOnboardingDone);
@@ -67,6 +75,41 @@ export function OnboardingOverlay() {
           {step === 0 ? (
             <>
               <Text variant="hero" upper style={styles.heading}>
+                {t.onboarding.languageTitle}
+              </Text>
+              <Text variant="body" color={colors.textMuted}>
+                {t.onboarding.languageBody}
+              </Text>
+              <View style={styles.languages}>
+                {LANGUAGES.map((language) => {
+                  const selected = locale === language.id;
+                  return (
+                    <Pressable
+                      key={language.id}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      onPress={() => setLocale(language.id)}
+                      style={({ pressed }) => [
+                        styles.language,
+                        selected && styles.languageSelected,
+                        pressed && styles.languagePressed,
+                      ]}
+                      testID={`onboarding-locale-${language.id}`}
+                    >
+                      <Text variant="h2" upper color={selected ? colors.text : colors.textMuted}>
+                        {language.label}
+                      </Text>
+                      {selected ? <View style={styles.languageDot} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
+
+          {step === 1 ? (
+            <>
+              <Text variant="hero" upper style={styles.heading}>
                 {t.onboarding.welcomeTitle}
               </Text>
               <Text variant="body" color={colors.textMuted}>
@@ -88,7 +131,7 @@ export function OnboardingOverlay() {
             </>
           ) : null}
 
-          {step === 1 ? (
+          {step === 2 ? (
             <>
               <Text variant="hero" upper style={styles.heading}>
                 {t.onboarding.interactionTitle}
@@ -105,7 +148,7 @@ export function OnboardingOverlay() {
             </>
           ) : null}
 
-          {step === 2 ? (
+          {step === 3 ? (
             <>
               <Text variant="hero" upper style={styles.heading}>
                 {t.onboarding.tipsTitle}
@@ -153,6 +196,26 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   picker: { marginTop: spacing.sm },
+  languages: { gap: spacing.sm, marginTop: spacing.sm },
+  language: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    minHeight: 64,
+  },
+  languageSelected: { borderColor: colors.red, backgroundColor: colors.redSoft },
+  languagePressed: { opacity: 0.85 },
+  languageDot: {
+    marginLeft: 'auto',
+    width: 14,
+    height: 14,
+    backgroundColor: colors.red,
+    transform: [{ skewX: '-12deg' }],
+  },
   tip: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   tipText: { flex: 1 },
 });

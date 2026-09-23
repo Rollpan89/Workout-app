@@ -113,6 +113,27 @@ describe('share codes', () => {
     ).toEqual({ ok: false, error: 'noExercises' });
   });
 
+  it('keeps warm-up and stretch on the rows, and treats a missing section as training', () => {
+    const code = encodeWorkoutShareCode(
+      draft({
+        rounds: 2,
+        exercises: [
+          { exerciseId: 'jumping-jack', sets: 1, prescription: { kind: 'time', seconds: 20 }, restSeconds: 0, section: 'warmup' },
+          { exerciseId: 'squat', sets: 3, prescription: { kind: 'reps', reps: 10 }, restSeconds: 60 },
+          { exerciseId: 'plank', sets: 1, prescription: { kind: 'time', seconds: 30 }, restSeconds: 0, section: 'stretch' },
+        ],
+      }),
+    );
+    const decoded = decodeWorkoutShareCode(code, getExercise);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.workout.exercises.map((e) => [e.exerciseId, e.section ?? 'main'])).toEqual([
+      ['jumping-jack', 'warmup'],
+      ['squat', 'main'],
+      ['plank', 'stretch'],
+    ]);
+  });
+
   it('turns a decoded workout into a fresh editable draft', () => {
     const code = encodeWorkoutShareCode(draft({ rounds: 3 }));
     const decoded = decodeWorkoutShareCode(code, getExercise);
