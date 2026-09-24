@@ -22,7 +22,7 @@ export function ActiveSessionBanner() {
   if (!active || !snapshot) return null;
 
   return (
-    <SlantBox color={colors.surfaceHigh} padding={spacing.md} style={styles.box}>
+    <SlantBox color={colors.surfaceHigh} contentStyle={styles.pad} style={styles.box}>
       <View style={styles.row} testID="active-session-banner">
         <View style={styles.text}>
           <Text variant="label" color={colors.orange} upper>
@@ -68,6 +68,8 @@ function phaseLabel(snapshot: SessionSnapshot, t: ReturnType<typeof useI18n>['t'
 }
 
 const styles = StyleSheet.create({
+  /** 12px 24px – vertical then horizontal, on the "Pass pågår" box. */
+  pad: { paddingVertical: 12, paddingHorizontal: 24 },
   box: { marginBottom: spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center' },
   text: { flex: 1, gap: spacing.xxs },

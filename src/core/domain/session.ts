@@ -1,6 +1,20 @@
 import type { MuscleGroup } from './exercise';
 
 /**
+ * One finished set, kept so the next session can speak the weight and apply
+ * progressive overload where it fits the lift. Absent on older logs.
+ */
+export interface LoggedSet {
+  readonly exerciseId: string;
+  readonly reps: number;
+  readonly seconds: number;
+  readonly weightKg?: number;
+  /** Reps the prescription asked for, when the set was rep-based. */
+  readonly targetReps?: number;
+  readonly feltHeavy?: boolean;
+}
+
+/**
  * The persisted record of a completed (or aborted) workout session.
  * Produced by the metrics engine when a session ends.
  */
@@ -20,6 +34,8 @@ export interface SessionLog {
   readonly estimatedCalories: number;
   /** Relative load per muscle group, normalised so the max group is 1. */
   readonly muscleImpact: Readonly<Partial<Record<MuscleGroup, number>>>;
+  /** Per-set log. Missing on older sessions — those still open and compare. */
+  readonly sets?: readonly LoggedSet[];
 }
 
 /**

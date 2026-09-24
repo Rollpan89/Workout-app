@@ -115,6 +115,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.md,
   },
   filters: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
   list: { paddingBottom: spacing.xl },

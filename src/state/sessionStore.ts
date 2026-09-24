@@ -5,8 +5,11 @@ import { getAudioSession } from '@/adapters/audio/audioSession';
 import { applyVoiceSettings, getSpeech as getSharedSpeech } from '@/adapters/speech/speechInstance';
 import { haptic } from '@/adapters/haptics/haptics';
 import { Coach } from '@/core/coach/Coach';
+import { getCoachScript } from '@/core/coach/script';
 import { SilentSpeech, type SpeechPort } from '@/core/coach/SpeechPort';
 import {
+  effectiveVoiceParams,
+  SPEECH_LANGUAGE_TAG,
   tempoFactorFor,
   TEMPO_STEP,
   type InteractionLevel,
@@ -15,7 +18,15 @@ import {
 } from '@/core/domain';
 import { buildSessionPlan } from '@/core/engine/planner';
 import { SessionEngine } from '@/core/engine/SessionEngine';
-import type { SessionCheckpoint, SessionPlan, SessionSnapshot } from '@/core/engine/types';
+import type { PlanStep, SessionCheckpoint, SessionPlan, SessionSnapshot } from '@/core/engine/types';
+import {
+  buildLoadCue,
+  platesPerSide,
+  sessionLoad,
+  stepWeightKg,
+  suggestLoad,
+  type LoadCue,
+} from '@/core/load/load';
 import { DEFAULT_INTENSITY, type IntensityLevel } from '@/core/intensity/intensity';
 import { buildSessionLog } from '@/core/metrics/metrics';
 import { getRepositories } from '@/data';
@@ -47,6 +58,9 @@ export interface SessionState {
   result?: SessionLog;
   saving: boolean;
   pendingCheckpoint?: SessionCheckpoint;
+  /** External load for the exercise the controls are editing. 0 = none. */
+  loadKg: number;
+  feltHeavy: boolean;
 }
 
 /** Actions & orchestration. The live engine is kept outside React state. */
@@ -64,6 +78,8 @@ export interface SessionActions {
   skipStep: () => void;
   adjustIntensity: (delta: 1 | -1) => void;
   adjustTempo: (delta: 1 | -1) => void;
+  adjustLoad: (delta: 1 | -1) => void;
+  markHeavy: () => void;
   stop: () => void;
   reset: () => void;
 }
@@ -82,6 +98,72 @@ let lastCheckpointAt = 0;
 let checkpointKey: string | undefined;
 /** Delayed audio teardown of a finished session – cancelled if a new one starts. */
 let audioEndTimer: ReturnType<typeof setTimeout> | undefined;
+/** Weights the user set during this session. 0 means they cleared a suggestion. */
+let loadOverrides = new Map<string, number>();
+let heavyIds = new Set<string>();
+
+function resetLoadMemory(): void {
+  loadOverrides = new Map();
+  heavyIds = new Set();
+}
+
+function cueFor(step: PlanStep): LoadCue {
+  const suggestion = suggestLoad(useHistoryStore.getState().logs, step.exercise.id, step.workoutExercise.weightKg, {
+    id: step.exercise.id,
+    category: step.exercise.category,
+    equipment: step.exercise.equipment,
+    muscles: step.exercise.muscles,
+  });
+  const done = engine?.snapshot.stats.completedSets ?? [];
+  const already = sessionLoad(
+    done.map((set) => ({
+      exerciseId: set.exerciseId,
+      reps: set.reps,
+      seconds: set.seconds,
+      weightKg: set.weightKg,
+    })),
+    step.exercise.id,
+  );
+  // A weight already lifted this session is kept. The +2.5 kg step waits until next time.
+  const override = loadOverrides.has(step.exercise.id) ? loadOverrides.get(step.exercise.id) : already;
+  return buildLoadCue(suggestion, step.exercise.equipment, override);
+}
+
+/** During rest the athlete is loading the *next* exercise, so the controls follow that. */
+function loadTarget(): PlanStep | undefined {
+  const snap = engine?.snapshot;
+  const plan = useSessionStore.getState().plan;
+  if (!snap?.step) return undefined;
+  const resting = snap.phase === 'resting' || (snap.phase === 'paused' && snap.pausedFrom === 'resting');
+  if (!resting || !plan) return snap.step;
+  return plan.steps[snap.stepIndex + 1] ?? snap.step;
+}
+
+function publishLoad(step: PlanStep): void {
+  const cue = cueFor(step);
+  const current = engine?.snapshot.step;
+  if (current && current.exercise.id === step.exercise.id) {
+    engine?.setLoad(cue.todayKg);
+    engine?.markHeavy(heavyIds.has(step.exercise.id));
+  }
+  useSessionStore.setState({
+    loadKg: cue.todayKg ?? 0,
+    feltHeavy: heavyIds.has(step.exercise.id),
+  });
+}
+
+function speakLine(text: string): void {
+  const settings = useSettingsStore.getState().settings;
+  if (!settings.voice.enabled || text.length === 0) return;
+  const params = effectiveVoiceParams(settings.voice);
+  getSpeech().speak({
+    text,
+    language: SPEECH_LANGUAGE_TAG[settings.locale],
+    rate: params.rate,
+    pitch: params.pitch,
+    priority: 'queue',
+  });
+}
 
 /** Write on every step/phase change, otherwise at most every CHECKPOINT_MS. */
 function writeCheckpoint(force = false): void {
@@ -140,6 +222,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   result: undefined,
   saving: false,
   pendingCheckpoint: undefined,
+  loadKg: 0,
+  feltHeavy: false,
 
   loadPendingCheckpoint: async () => {
     try {
@@ -164,6 +248,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   start: ({ workout, intensity, interactionLevel, tempoFactor, resumeFrom }) => {
     // A session that just ended schedules its audio teardown a few seconds
     // later (so the finish line is heard); starting a new one cancels it.
+    resetLoadMemory();
     if (audioEndTimer) clearTimeout(audioEndTimer);
     audioEndTimer = undefined;
     teardownRuntime();
@@ -193,8 +278,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       if (engine && Math.abs(engine.tempo - wanted) > 0.001)
         engine.setTempoFactor(wanted, { silent: true });
     };
-    engine.events.on('exerciseAnnounced', ({ step }) => applyExerciseTempo(step.exercise.id));
-    engine.events.on('awaitingUser', ({ step }) => applyExerciseTempo(step.exercise.id));
+    engine.events.on('exerciseAnnounced', ({ step }) => {
+      applyExerciseTempo(step.exercise.id);
+      publishLoad(step);
+    });
+    engine.events.on('awaitingUser', ({ step }) => {
+      applyExerciseTempo(step.exercise.id);
+      publishLoad(step);
+    });
+    engine.events.on('restStarted', ({ step, nextStep }) => publishLoad(nextStep ?? step));
 
     applyVoiceSettings(settings.locale, settings.voice);
     coach = new Coach({
@@ -203,6 +295,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       voice: settings.voice,
       userName: settings.profile.displayName,
       haptic: settings.voice.haptics ? haptic : undefined,
+      loadCue: (step) => cueFor(step),
     });
     coach.attach(engine);
 
@@ -244,7 +337,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         .finally(() => set({ saving: false }));
     });
 
-    set({ plan, snapshot: engine.snapshot, result: undefined, pendingCheckpoint: undefined });
+    set({ plan, snapshot: engine.snapshot, result: undefined, pendingCheckpoint: undefined, loadKg: 0, feltHeavy: false });
 
     const startedEngine = engine;
     void getAudioSession().begin({
@@ -281,6 +374,38 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     const next = engine.setTempoFactor(engine.tempo + delta * TEMPO_STEP);
     if (step) useSettingsStore.getState().setTempoOverride(step.exercise.id, next);
   },
+  adjustLoad: (delta) => {
+    const step = loadTarget();
+    if (!step) return;
+    const current = cueFor(step).todayKg ?? 0;
+    const next = stepWeightKg(current, delta, step.exercise.equipment);
+    loadOverrides.set(step.exercise.id, next);
+    publishLoad(step);
+    haptic('tap');
+    const script = getCoachScript(useSettingsStore.getState().settings.locale);
+    if (next <= 0) {
+      speakLine(script.noWeight);
+      return;
+    }
+    const parts = [script.weight(next)];
+    if (step.exercise.equipment.includes('barbell')) {
+      const plates = platesPerSide(next);
+      if (plates && plates.length === 0) parts.push(script.emptyBar);
+      else if (plates && plates.length > 0) parts.push(script.plates(plates));
+    }
+    speakLine(parts.join(' '));
+  },
+  markHeavy: () => {
+    const step = loadTarget();
+    if (!step || (cueFor(step).todayKg ?? 0) <= 0) return;
+    const next = !heavyIds.has(step.exercise.id);
+    if (next) heavyIds.add(step.exercise.id);
+    else heavyIds.delete(step.exercise.id);
+    publishLoad(step);
+    haptic('tap');
+    const script = getCoachScript(useSettingsStore.getState().settings.locale);
+    speakLine(next ? script.heavyNoted : script.heavyCleared);
+  },
   stop: () => engine?.stop(),
 
   reset: () => {
@@ -288,8 +413,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     const wasRunning = !!engine && !currentResult;
     teardownRuntime();
     if (wasRunning) clearCheckpoint();
+    resetLoadMemory();
     if (currentSnapshot || currentPlan) {
-      set({ plan: undefined, snapshot: undefined, result: undefined, saving: false });
+      set({ plan: undefined, snapshot: undefined, result: undefined, saving: false, loadKg: 0, feltHeavy: false });
     }
   },
 }));

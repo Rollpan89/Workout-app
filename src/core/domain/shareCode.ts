@@ -1,4 +1,11 @@
-import { clamp, DRAFT_LIMITS, type CustomWorkoutDraft, type DraftExercise } from './customWorkout';
+import {
+  clamp,
+  DRAFT_LIMITS,
+  exerciseSection,
+  type CustomWorkoutDraft,
+  type DraftExercise,
+  type DraftSection,
+} from './customWorkout';
 import type { Exercise } from './exercise';
 import {
   WORKOUT_ACCENTS,
@@ -65,6 +72,10 @@ interface SharePayloadExercise {
   readonly s: number;
   readonly p: { readonly k: 'reps' | 'time'; readonly n: number };
   readonly r: number;
+  /** Section. Omitted for training so older apps still import the row. */
+  readonly c?: 'w' | 's';
+  /** Planned weight in kilograms. Omitted when unloaded, so older apps ignore it. */
+  readonly w?: number;
 }
 
 interface SharePayload {
@@ -78,6 +89,19 @@ interface SharePayload {
   readonly e: readonly SharePayloadExercise[];
 }
 
+/** Omitted for training so a v1 code without `c` still means the main section. */
+function sectionCode(section: DraftSection): 'w' | 's' | undefined {
+  if (section === 'warmup') return 'w';
+  if (section === 'stretch') return 's';
+  return undefined;
+}
+
+function sectionFromCode(value: unknown): DraftSection | undefined {
+  if (value === 'w') return 'warmup';
+  if (value === 's') return 'stretch';
+  return undefined;
+}
+
 /** The transportable body of a draft (no ids, no timestamps). */
 export function encodeWorkoutShareCode(draft: CustomWorkoutDraft): string {
   const payload: SharePayload = {
@@ -88,15 +112,20 @@ export function encodeWorkoutShareCode(draft: CustomWorkoutDraft): string {
     a: draft.accent,
     t: clamp(draft.transitionSeconds, DRAFT_LIMITS.transition.min, DRAFT_LIMITS.transition.max),
     r: draft.rounds ?? 1,
-    e: draft.exercises.map((e) => ({
-      x: e.exerciseId,
-      s: e.sets,
-      p:
-        e.prescription.kind === 'reps'
-          ? { k: 'reps', n: e.prescription.reps }
-          : { k: 'time', n: e.prescription.seconds },
-      r: e.restSeconds,
-    })),
+    e: draft.exercises.map((e) => {
+      const code = sectionCode(exerciseSection(e));
+      return {
+        x: e.exerciseId,
+        s: e.sets,
+        p:
+          e.prescription.kind === 'reps'
+            ? { k: 'reps' as const, n: e.prescription.reps }
+            : { k: 'time' as const, n: e.prescription.seconds },
+        r: e.restSeconds,
+        ...(code ? { c: code } : {}),
+        ...(e.weightKg && e.weightKg > 0 ? { w: e.weightKg } : {}),
+      };
+    }),
   };
   return `${SHARE_CODE_PREFIX}${JSON.stringify(payload)}`;
 }
@@ -227,13 +256,25 @@ function readExercise(
   const prescription = readPrescription(item.p);
   if (!prescription) return undefined;
 
+  const section = sectionFromCode(item.c);
+  const weightKg = readWeight(item.w);
   const draft: DraftExercise = {
     exerciseId: id,
     sets: clamp(numberOr(item.s, 3), DRAFT_LIMITS.sets.min, DRAFT_LIMITS.sets.max),
     prescription,
     restSeconds: clamp(numberOr(item.r, 60), DRAFT_LIMITS.rest.min, DRAFT_LIMITS.rest.max),
+    ...(section ? { section } : {}),
+    ...(weightKg ? { weightKg } : {}),
   };
   return { id, unknown: lookup(id) === undefined, draft };
+}
+
+function readWeight(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  // clamp() rounds to a whole number; weights move in 2.5 kg steps.
+  const rounded = Math.round(value * 2) / 2;
+  const bounded = Math.min(DRAFT_LIMITS.weight.max, Math.max(DRAFT_LIMITS.weight.min, rounded));
+  return bounded > 0 ? bounded : undefined;
 }
 
 function readPrescription(value: unknown): SetPrescription | undefined {

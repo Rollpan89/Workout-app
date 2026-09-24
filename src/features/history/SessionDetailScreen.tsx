@@ -2,6 +2,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Platform, StyleSheet, View } from 'react-native';
 
+import { getExercise } from '@/content';
+import type { LoggedSet } from '@/core/domain';
+import { formatKg } from '@/core/load/load';
 import { compareWithPrevious, formatCalorieRange } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDate, formatDuration } from '@/i18n';
@@ -99,6 +102,25 @@ export function SessionDetailScreen() {
         </Text>
       )}
 
+      {log.sets && log.sets.length > 0 ? (
+        <>
+          <SectionTitle title={t.history.sets} color={tone.main} />
+          <View style={styles.sets} testID="detail-sets">
+            {groupSets(log.sets).map((group, index) => {
+              const exercise = getExercise(group.exerciseId);
+              return (
+                <View key={`${group.exerciseId}-${index}`} style={styles.setRow}>
+                  <Text variant="body">{exercise ? lz(exercise.name) : group.exerciseId}</Text>
+                  <Text variant="bodySmall" color={colors.textMuted}>
+                    {group.sets.map((set) => formatSet(set, locale, t.history.heavy)).join('   ·   ')}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+
       <SectionTitle title={t.summary.muscleImpact} color={tone.main} />
       <MuscleImpactBars impact={log.muscleImpact} limit={8} />
 
@@ -146,12 +168,30 @@ export function SessionDetailScreen() {
   );
 }
 
+function groupSets(sets: readonly LoggedSet[]): { exerciseId: string; sets: LoggedSet[] }[] {
+  const groups: { exerciseId: string; sets: LoggedSet[] }[] = [];
+  for (const set of sets) {
+    const last = groups[groups.length - 1];
+    if (last && last.exerciseId === set.exerciseId) last.sets.push(set);
+    else groups.push({ exerciseId: set.exerciseId, sets: [set] });
+  }
+  return groups;
+}
+
+function formatSet(set: LoggedSet, locale: 'sv' | 'en', heavy: string): string {
+  const work = set.reps > 0 ? String(set.reps) : `${set.seconds}s`;
+  const label = set.weightKg && set.weightKg > 0 ? `${formatKg(set.weightKg, locale)} kg × ${work}` : work;
+  return set.feltHeavy ? `${label} ${heavy}` : label;
+}
+
 const styles = StyleSheet.create({
   nav: { flexDirection: 'row', marginLeft: -spacing.md, marginBottom: spacing.sm },
   hero: { gap: spacing.xs, marginBottom: spacing.xl },
   heading: { fontSize: 48, lineHeight: 48 },
   grid: { flexDirection: 'row', marginHorizontal: -6, marginBottom: spacing.md },
   first: { marginBottom: spacing.md },
+  sets: { gap: spacing.sm, marginBottom: spacing.lg },
+  setRow: { gap: 2 },
   actions: { marginTop: spacing.xl, gap: spacing.md, alignItems: 'center' },
   confirmRow: {
     flexDirection: 'row',

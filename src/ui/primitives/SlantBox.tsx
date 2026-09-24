@@ -31,7 +31,8 @@ export function SlantBox({
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, { backgroundColor: color, transform: [{ skewX: skew }] }]}
       />
-      <View style={[{ padding }, contentStyle]}>{children}</View>
+      {/* Skip the shorthand when padding is 0 so contentStyle can set 12/24 without being reset. */}
+      <View style={[padding > 0 ? { padding } : null, contentStyle]}>{children}</View>
     </View>
   );
 }
