@@ -19,6 +19,8 @@ export interface WorkoutExercise {
   readonly prescription: SetPrescription;
   /** Rest after each set (seconds). Defaults to the block's rest if omitted. */
   readonly restSeconds?: number;
+  /** Planned external load in kilograms. Omitted when the exercise is unloaded. */
+  readonly weightKg?: number;
 }
 
 /**

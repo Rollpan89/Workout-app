@@ -1,4 +1,5 @@
 import type { Locale } from '../domain/localized';
+import { formatKg } from '../load/load';
 import type { IntensityLabelKey } from '../intensity/intensity';
 
 /**
@@ -61,6 +62,22 @@ export interface CoachScript {
   readonly restTalk: readonly string[]; // said during longer rests
   /** Before the rest starts: "Nästa: Armhävningar, 12 repetitioner." */
   readonly comingUp: (exercise: string, target: string) => string;
+  /** "60 kilo." / "60 kilos." Spoken before they lift. */
+  readonly weight: (kg: number) => string;
+  /** "Tjugo på varje sida." Plates are per side of a 20 kg bar. */
+  readonly plates: (plates: readonly number[]) => string;
+  readonly emptyBar: string;
+  /** "Förra gången 60 kilo, 10 repetitioner." Reps of 0 omits the rep clause. */
+  readonly lastTime: (kg: number, reps: number) => string;
+  readonly loadUp: string;
+  /** Isolation earned a smaller step than a base lift. */
+  readonly loadUpSmall: string;
+  /** Isolation was clean, but needs another clean session before the load moves. */
+  readonly loadWait: string;
+  readonly loadHold: string;
+  readonly heavyNoted: string;
+  readonly heavyCleared: string;
+  readonly noWeight: string;
   readonly intensityLabels: Readonly<Record<IntensityLabelKey, string>>;
 }
 
@@ -100,6 +117,32 @@ export function restDurationText(seconds: number, locale: Locale): string {
     return minutes === 1 ? `${word} minute` : `${word} minutes`;
   }
   return locale === 'sv' ? `${s} sekunder` : `${s} seconds`;
+}
+
+function plateWord(kg: number, locale: Locale): string {
+  if (locale === 'sv') {
+    if (kg === 2.5) return 'två och en halv';
+    if (kg === 1.25) return 'ett och ett kvarts';
+    const n = Math.round(kg);
+    return NUMBERS_SV[n] ?? String(n);
+  }
+  if (kg === 2.5) return 'two and a half';
+  if (kg === 1.25) return 'one and a quarter';
+  const n = Math.round(kg);
+  return NUMBERS_EN[n] ?? String(n);
+}
+
+/** \"Tjugo och två och en halv på varje sida.\" */
+export function platesText(plates: readonly number[], locale: Locale): string {
+  const words = plates.map((plate) => plateWord(plate, locale));
+  const joined =
+    words.length <= 1
+      ? (words[0] ?? '')
+      : locale === 'sv'
+        ? `${words.slice(0, -1).join(', ')} och ${words[words.length - 1]}`
+        : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+  const sentence = locale === 'sv' ? `${joined} på varje sida.` : `${joined} on each side.`;
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
 const SV_LABELS: Record<IntensityLabelKey, string> = {
@@ -182,6 +225,20 @@ const sv: CoachScript = {
     'Drick lite vatten om du behöver.',
   ],
   comingUp: (exercise, target) => `Nästa: ${exercise}, ${target}.`,
+  weight: (kg) => `${formatKg(kg, 'sv')} kilo.`,
+  plates: (plates) => platesText(plates, 'sv'),
+  emptyBar: 'Tom stång.',
+  lastTime: (kg, reps) =>
+    reps > 0
+      ? `Förra gången ${formatKg(kg, 'sv')} kilo, ${reps} repetitioner.`
+      : `Förra gången ${formatKg(kg, 'sv')} kilo.`,
+  loadUp: 'Baslyft. Vi ökar.',
+  loadUpSmall: 'Isolering. Liten ökning.',
+  loadWait: 'Isolering. Samma vikt ett pass till.',
+  loadHold: 'Vi behåller vikten.',
+  heavyNoted: 'Noterat. Vi behåller vikten nästa gång.',
+  heavyCleared: 'Okej. Nästa steg när seten sitter.',
+  noWeight: 'Ingen vikt.',
   intensityLabels: SV_LABELS,
 };
 
@@ -249,6 +306,20 @@ const en: CoachScript = {
     'Grab some water if you need it.',
   ],
   comingUp: (exercise, target) => `Coming up: ${exercise}, ${target}.`,
+  weight: (kg) => `${formatKg(kg, 'en')} ${kg === 1 ? 'kilo' : 'kilos'}.`,
+  plates: (plates) => platesText(plates, 'en'),
+  emptyBar: 'Empty bar.',
+  lastTime: (kg, reps) =>
+    reps > 0
+      ? `Last time ${formatKg(kg, 'en')} ${kg === 1 ? 'kilo' : 'kilos'}, ${reps} reps.`
+      : `Last time ${formatKg(kg, 'en')} ${kg === 1 ? 'kilo' : 'kilos'}.`,
+  loadUp: 'Base lift. Going up.',
+  loadUpSmall: 'Isolation. Small increase.',
+  loadWait: 'Isolation. Same weight one more time.',
+  loadHold: 'Same weight.',
+  heavyNoted: "Noted. We'll keep the weight next time.",
+  heavyCleared: "Okay. Next step when the sets are solid.",
+  noWeight: 'No weight.',
   intensityLabels: EN_LABELS,
 };
 

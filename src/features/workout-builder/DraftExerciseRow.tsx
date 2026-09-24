@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { DraftExercise, Exercise } from '@/core/domain';
 import { clamp, DRAFT_LIMITS } from '@/core/domain';
+import { formatKg, showsLoadControl, stepWeightKg } from '@/core/load/load';
 import { useI18n } from '@/hooks/useI18n';
 import { colors, radius, spacing } from '@/theme';
 import { Card, Chip, Text } from '@/ui/primitives';
@@ -26,7 +27,7 @@ export interface DraftExerciseRowProps {
 
 /** One editable exercise line in the builder: sets · reps/seconds · rest. */
 export function DraftExerciseRow({ index, total, rowId = index, item, exercise, color, onChange, onRemove, onMove, onOpenInfo }: DraftExerciseRowProps) {
-  const { t, lz } = useI18n();
+  const { t, lz, locale } = useI18n();
   const isReps = item.prescription.kind === 'reps';
   const value = item.prescription.kind === 'reps' ? item.prescription.reps : item.prescription.seconds;
 
@@ -95,6 +96,20 @@ export function DraftExerciseRow({ index, total, rowId = index, item, exercise, 
         />
       </View>
 
+      {showsLoadControl(exercise.equipment) || (item.weightKg ?? 0) > 0 ? (
+        <View style={styles.controls}>
+          <Stepper
+            label={t.builder.weight}
+            value={item.weightKg ?? 0}
+            step={2.5}
+            color={color}
+            format={(n) => (n > 0 ? formatKg(n, locale) : '–')}
+            onChange={(n) => setWeight(item, n, exercise, onChange)}
+            testID={`draft-row-${rowId}-weight`}
+          />
+        </View>
+      ) : null}
+
       <View style={styles.modeRow}>
         <Text variant="labelSmall" color={colors.textDim} upper>
           {t.builder.mode}
@@ -106,11 +121,30 @@ export function DraftExerciseRow({ index, total, rowId = index, item, exercise, 
   );
 }
 
+function setWeight(
+  item: DraftExercise,
+  raw: number,
+  exercise: Exercise,
+  onChange: (next: DraftExercise) => void,
+): void {
+  const current = item.weightKg ?? 0;
+  const delta: 1 | -1 = raw >= current ? 1 : -1;
+  const next = stepWeightKg(current, delta, exercise.equipment, DRAFT_LIMITS.weight.max);
+  if (next <= 0) {
+    if (item.weightKg === undefined) return;
+    const { weightKg: _ignored, ...rest } = item;
+    onChange(rest);
+    return;
+  }
+  onChange({ ...item, weightKg: next });
+}
+
 function Stepper({
   label,
   value,
   step = 1,
   color,
+  format,
   onChange,
   testID,
 }: {
@@ -118,6 +152,7 @@ function Stepper({
   value: number;
   step?: number;
   color: string;
+  format?: (value: number) => string;
   onChange: (next: number) => void;
   testID: string;
 }) {

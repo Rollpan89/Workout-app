@@ -259,7 +259,8 @@ describe('PulseCoach – core flow', () => {
     expect(screen.getByText('Hur mycket vill du styra?')).toBeTruthy();
     fireEvent.press(screen.getByText('Assisterad'));
     fireEvent.press(screen.getByTestId('onboarding-next'));
-    expect(screen.getByText('Tre saker att veta')).toBeTruthy();
+    expect(screen.getByText('Fyra saker att veta')).toBeTruthy();
+    expect(screen.getByText(/lär appen sig/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('onboarding-next'));
     await waitFor(() => expect(screen.queryByTestId('onboarding')).toBeNull());
 

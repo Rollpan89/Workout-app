@@ -134,6 +134,26 @@ describe('share codes', () => {
     ]);
   });
 
+  it('round-trips a planned weight and leaves older codes without one alone', () => {
+    const code = encodeWorkoutShareCode(
+      draft({
+        exercises: [
+          { exerciseId: 'squat', sets: 3, prescription: { kind: 'reps', reps: 5 }, restSeconds: 90, weightKg: 62.5 },
+        ],
+      }),
+    );
+    expect(code).toContain('"w":62.5');
+    const decoded = decodeWorkoutShareCode(code, getExercise);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.workout.exercises[0]?.weightKg).toBe(62.5);
+
+    const bare = decodeWorkoutShareCode(encodeWorkoutShareCode(draft()), getExercise);
+    expect(bare.ok).toBe(true);
+    if (!bare.ok) return;
+    expect(bare.workout.exercises[0]?.weightKg).toBeUndefined();
+  });
+
   it('turns a decoded workout into a fresh editable draft', () => {
     const code = encodeWorkoutShareCode(draft({ rounds: 3 }));
     const decoded = decodeWorkoutShareCode(code, getExercise);

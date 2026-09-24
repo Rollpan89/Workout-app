@@ -23,6 +23,8 @@ export interface DraftExercise {
   readonly prescription: SetPrescription;
   /** Rest after each set in seconds. */
   readonly restSeconds: number;
+  /** Planned external load in kilograms. Omitted (or 0) means no weight. */
+  readonly weightKg?: number;
   /**
    * Warm-up and stretch run once. Training (`main`, or omitted) is what
    * `rounds` repeats. Omitted on older drafts and on training rows so a
@@ -72,6 +74,7 @@ export const DRAFT_LIMITS = {
   transition: { min: 0, max: 120 },
   exercises: { min: 1, max: 30 },
   rounds: { min: 1, max: 10 },
+  weight: { min: 0, max: 300 },
 } as const;
 
 /** Effective number of rounds of a draft (1 when unset or invalid). */
@@ -176,6 +179,7 @@ function toDraftExercise(block: WorkoutBlock, we: WorkoutBlock['exercises'][numb
     sets: we.sets,
     prescription: we.prescription,
     restSeconds: we.restSeconds ?? block.restSeconds,
+    ...(we.weightKg && we.weightKg > 0 ? { weightKg: we.weightKg } : {}),
   };
   return withSection(row, section);
 }
@@ -233,6 +237,7 @@ function toWorkoutExercise(e: DraftExercise): WorkoutExercise {
     sets: e.sets,
     prescription: e.prescription,
     restSeconds: e.restSeconds,
+    ...(e.weightKg && e.weightKg > 0 ? { weightKg: e.weightKg } : {}),
   };
 }
 

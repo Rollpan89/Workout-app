@@ -22,7 +22,7 @@ const LANGUAGES: readonly { readonly id: Locale; readonly label: string }[] = [
  *  1. Language (so every later screen is already in the right language)
  *  2. What the app is (voice coach, hands-free) + optional name
  *  3. Pick the interaction level (the single most important setting)
- *  4. The three things to know during a workout (double-tap, ±, tempo)
+ *  4. Four things to know during a workout (double-tap, ±, tempo, the app learns)
  * Shown once; `settings.onboardingDone` is persisted when finished or skipped.
  */
 export function OnboardingOverlay() {
@@ -153,7 +153,7 @@ export function OnboardingOverlay() {
               <Text variant="hero" upper style={styles.heading}>
                 {t.onboarding.tipsTitle}
               </Text>
-              {[t.onboarding.tipDoubleTap, t.onboarding.tipIntensity, t.onboarding.tipTempo].map(
+              {[t.onboarding.tipDoubleTap, t.onboarding.tipIntensity, t.onboarding.tipTempo, t.onboarding.tipLearns].map(
                 (tip, i) => (
                   <View key={tip} style={styles.tip}>
                     <Text variant="h2" color={colors.red}>

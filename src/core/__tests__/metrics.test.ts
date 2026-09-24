@@ -130,6 +130,26 @@ describe('buildSessionLog', () => {
     expect(log.endedAt).toBe(new Date(2_000_000).toISOString());
     expect(log.id).toMatch(/^session_/);
   });
+
+  it('keeps the weight on the persisted sets', () => {
+    const log = buildSessionLog(
+      plan(),
+      snapshot({
+        completedSets: [
+          { stepIndex: 0, exerciseId: 'squat', reps: 8, seconds: 20, intensity: 1, weightKg: 62.5, targetReps: 8 },
+          { stepIndex: 1, exerciseId: 'squat', reps: 6, seconds: 18, intensity: 1, weightKg: 62.5, targetReps: 8, feltHeavy: true },
+        ],
+      }),
+      true,
+      profile,
+      lookup,
+      2_000_000,
+    );
+    expect(log.sets).toEqual([
+      { exerciseId: 'squat', reps: 8, seconds: 20, weightKg: 62.5, targetReps: 8 },
+      { exerciseId: 'squat', reps: 6, seconds: 18, weightKg: 62.5, targetReps: 8, feltHeavy: true },
+    ]);
+  });
 });
 
 describe('history', () => {

@@ -74,6 +74,8 @@ interface SharePayloadExercise {
   readonly r: number;
   /** Section. Omitted for training so older apps still import the row. */
   readonly c?: 'w' | 's';
+  /** Planned weight in kilograms. Omitted when unloaded, so older apps ignore it. */
+  readonly w?: number;
 }
 
 interface SharePayload {
@@ -121,6 +123,7 @@ export function encodeWorkoutShareCode(draft: CustomWorkoutDraft): string {
             : { k: 'time' as const, n: e.prescription.seconds },
         r: e.restSeconds,
         ...(code ? { c: code } : {}),
+        ...(e.weightKg && e.weightKg > 0 ? { w: e.weightKg } : {}),
       };
     }),
   };
@@ -254,14 +257,24 @@ function readExercise(
   if (!prescription) return undefined;
 
   const section = sectionFromCode(item.c);
+  const weightKg = readWeight(item.w);
   const draft: DraftExercise = {
     exerciseId: id,
     sets: clamp(numberOr(item.s, 3), DRAFT_LIMITS.sets.min, DRAFT_LIMITS.sets.max),
     prescription,
     restSeconds: clamp(numberOr(item.r, 60), DRAFT_LIMITS.rest.min, DRAFT_LIMITS.rest.max),
     ...(section ? { section } : {}),
+    ...(weightKg ? { weightKg } : {}),
   };
   return { id, unknown: lookup(id) === undefined, draft };
+}
+
+function readWeight(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  // clamp() rounds to a whole number; weights move in 2.5 kg steps.
+  const rounded = Math.round(value * 2) / 2;
+  const bounded = Math.min(DRAFT_LIMITS.weight.max, Math.max(DRAFT_LIMITS.weight.min, rounded));
+  return bounded > 0 ? bounded : undefined;
 }
 
 function readPrescription(value: unknown): SetPrescription | undefined {

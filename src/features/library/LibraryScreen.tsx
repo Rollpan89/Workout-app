@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { getExercise } from '@/content';
 import type { Workout, WorkoutGoal } from '@/core/domain';
+import { recommendToday, type TodayPick } from '@/core/load/load';
 import { summarizeHistory } from '@/core/metrics/metrics';
 import { useI18n } from '@/hooks/useI18n';
 import { useBuiltInWorkouts, useCustomWorkoutStore } from '@/state/customWorkoutStore';
@@ -33,6 +34,10 @@ export function LibraryScreen() {
   const customWorkouts = useCustomWorkoutStore((s) => s.workouts);
   const removeCustom = useCustomWorkoutStore((s) => s.remove);
   const summary = useMemo(() => summarizeHistory(logs), [logs]);
+  const today = useMemo(
+    () => (query.trim() ? undefined : recommendToday([...customWorkouts, ...builtIn], logs)),
+    [query, customWorkouts, builtIn, logs],
+  );
   const pendingCheckpoint = useSessionStore((s) => s.pendingCheckpoint);
 
   const { locale } = useI18n();
@@ -93,6 +98,8 @@ export function LibraryScreen() {
           </SlantBox>
         </View>
       ) : null}
+
+      {today ? <TodayCard pick={today} onPress={open} /> : null}
 
       <TextInput
         value={query}
@@ -163,6 +170,41 @@ export function LibraryScreen() {
   );
 }
 
+function TodayCard({ pick, onPress }: { pick: TodayPick; onPress: (workout: Workout) => void }) {
+  const { t, f, lz } = useI18n();
+  const headline = pick.learning
+    ? t.library.todayLearning
+    : pick.daysRested < 1
+      ? t.library.todayReady
+      : f(t.library.todayRested, {
+          muscle: t.musclesThe[pick.muscle],
+          days: pick.daysRested,
+          unit: pick.daysRested === 1 ? t.library.day : t.library.days,
+        });
+  return (
+    <Pressable
+      onPress={() => onPress(pick.workout)}
+      style={({ pressed }) => [styles.today, pressed && styles.todayPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`${t.library.todayEyebrow}. ${headline}`}
+      testID="today-card"
+    >
+      <Text variant="labelSmall" color={colors.red} upper>
+        {t.library.todayEyebrow}
+      </Text>
+      <Text variant="h3">{headline}</Text>
+      <Text variant="body" color={colors.textMuted}>
+        {`${lz(pick.workout.title)} · ${pick.workout.estimatedMinutes} ${t.common.minutes}`}
+      </Text>
+      {pick.learning ? (
+        <Text variant="bodySmall" color={colors.textDim}>
+          {t.library.todayLearningHint}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function normalise(s: string): string {
   return s.trim().toLocaleLowerCase();
 }
@@ -192,6 +234,16 @@ const styles = StyleSheet.create({
   heading: { fontSize: 56, lineHeight: 56, color: colors.text },
   statsRow: { flexDirection: 'row', marginHorizontal: -6, marginBottom: spacing.lg },
   statBox: { flex: 1, marginHorizontal: 6 },
+  today: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.red,
+    padding: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  todayPressed: { opacity: 0.85 },
   search: {
     fontFamily: fonts.bodyMedium,
     fontSize: 16,

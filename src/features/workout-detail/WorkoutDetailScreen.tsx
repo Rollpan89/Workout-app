@@ -4,6 +4,7 @@ import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getExercise } from '@/content';
+import { formatKg } from '@/core/load/load';
 import { TEMPO_PRESET_FACTOR, TEMPO_PRESETS, type Exercise, type InteractionLevel, type ReadinessLevel, type TempoPreset } from '@/core/domain';
 import { buildSessionPlan, estimatePlanDuration } from '@/core/engine/planner';
 import {
@@ -31,7 +32,7 @@ export function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { t, lz } = useI18n();
+  const { t, lz, locale } = useI18n();
   const defaultInteraction = useSettingsStore((s) => s.settings.interactionLevel);
   const startSession = useSessionStore((s) => s.start);
 
@@ -252,6 +253,11 @@ export function WorkoutDetailScreen() {
                     <Text variant="bodyBold" color={changed ? tone.main : colors.textMuted}>
                       {we.sets} × {scaledValue}{unit}
                     </Text>
+                    {we.weightKg && we.weightKg > 0 ? (
+                      <Text variant="labelSmall" color={colors.textDim}>
+                        {formatKg(we.weightKg, locale)} kg
+                      </Text>
+                    ) : null}
                     {changed ? (
                       <Text variant="labelSmall" color={colors.textDim}>
                         ({baseValue}{unit})
