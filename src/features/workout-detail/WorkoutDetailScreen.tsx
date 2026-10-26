@@ -19,7 +19,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { useCustomWorkoutStore, useWorkout } from '@/state/customWorkoutStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
-import { accent, colors, spacing } from '@/theme';
+import { accent, colors, fonts, spacing } from '@/theme';
 import { ExerciseSheet, IntensityMeter, InteractionPicker } from '@/ui/components';
 import { Button, Card, Chip, Screen, SectionTitle, Text } from '@/ui/primitives';
 
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   manageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm },
   confirmRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   confirmText: { flex: 1 },
-  chevron: { marginLeft: spacing.xs },
+  chevron: { marginLeft: spacing.xs, fontFamily: fonts.headingUpright, fontStyle: 'normal' },
   exerciseName: { flex: 1, gap: 2 },
   exerciseValue: { alignItems: 'flex-end', gap: 2 },
   startNew: { marginTop: spacing.sm },

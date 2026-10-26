@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { INTENSITY_LEVELS, intensityIndex, intensityLabelKey, type IntensityLevel } from '@/core/intensity/intensity';
 import { useI18n } from '@/hooks/useI18n';
-import { colors, spacing } from '@/theme';
+import { colors, fonts, spacing } from '@/theme';
 import { Text } from '@/ui/primitives';
 
 export interface IntensityMeterProps {
@@ -133,7 +133,12 @@ const styles = StyleSheet.create({
     transform: [{ skewX: '-12deg' }],
   },
   stepButtonCompact: { width: 56, height: 56 },
-  stepLabel: { transform: [{ skewX: '12deg' }], lineHeight: 44 },
+  stepLabel: {
+    fontFamily: fonts.displayUpright,
+    fontStyle: 'normal',
+    transform: [{ skewX: '12deg' }],
+    lineHeight: 44,
+  },
   pressed: { opacity: 0.8 },
   disabled: { opacity: 0.3 },
   compactLabel: { marginTop: 2 },

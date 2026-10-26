@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { getSpeech, type VoiceOption } from '@/adapters';
+import { getSpeech, type VoiceGender, type VoiceOption, type VoiceTier } from '@/adapters';
 import {
   effectiveVoiceParams,
   SPEECH_LANGUAGE_TAG,
@@ -9,7 +9,7 @@ import {
   type VoiceSettings,
 } from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 import { Text } from '@/ui/primitives';
 
 export interface VoicePickerProps {
@@ -19,12 +19,12 @@ export interface VoicePickerProps {
 }
 
 /**
- * Lists the device's voices for the current language, best-ranked first,
- * with a ▶ preview per row. "Auto" lets the adapter pick the top-ranked one.
- * Shows an install hint when only default-quality voices exist.
+ * Lists voices by gender, then by native/premium tier, with a ▶ preview per row.
+ * "Auto" uses the adapter's top-ranked voice. Shows an install hint when only
+ * default-quality voices exist.
  */
 export function VoicePicker({ locale, voice, onPick }: VoicePickerProps) {
-  const { t } = useI18n();
+  const { t, f } = useI18n();
   const language = SPEECH_LANGUAGE_TAG[locale];
   const [voices, setVoices] = useState<readonly VoiceOption[] | undefined>();
   const [autoId, setAutoId] = useState<string | undefined>();
@@ -66,23 +66,67 @@ export function VoicePicker({ locale, voice, onPick }: VoicePickerProps) {
   }
 
   const hasGoodVoice = voices.some((v) => v.score >= 60);
-  const rows: { id: string | undefined; label: string; sub: string }[] = [
-    {
-      id: undefined,
-      label: t.settings.voiceAuto,
-      sub: voices.find((v) => v.id === autoId)?.name ?? '',
-    },
-    ...voices.map((v) => ({
-      id: v.id,
-      label: v.name,
-      sub:
-        v.score >= 60
-          ? t.settings.voiceQualityHigh
-          : v.quality === 'enhanced'
-            ? t.settings.voiceQualityEnhanced
-            : t.settings.voiceQualityDefault,
-    })),
+  const autoVoice = voices.find((v) => v.id === autoId);
+  const displayName = (item: VoiceOption) => {
+    if (item.nameKind !== 'numbered') return item.name;
+    const number = Number(item.name.split(' ').at(-1)) || 1;
+    return f(t.settings.voiceNumber, { number });
+  };
+  const qualityLabel = (item: VoiceOption) =>
+    item.tier === 'premium'
+      ? t.settings.voiceQualityHigh
+      : item.quality === 'enhanced'
+        ? t.settings.voiceQualityEnhanced
+        : t.settings.voiceQualityDefault;
+  const tierLabel = (tier: VoiceTier) =>
+    tier === 'premium' ? t.settings.voiceGroupPremium : t.settings.voiceGroupNative;
+  const renderRow = (id: string | undefined, label: string, sub: string) => {
+    const selected = (voice.voiceId ?? undefined) === id;
+    return (
+      <View key={id ?? 'auto'} style={styles.row}>
+        <Pressable
+          onPress={() => onPick(id)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected }}
+          style={({ pressed }) => [styles.select, selected && styles.selectSelected, pressed && styles.pressed]}
+          testID={`voice-${id ?? 'auto'}`}
+        >
+          <View style={styles.selectText}>
+            <Text variant="bodyBold" color={selected ? colors.text : colors.textMuted} numberOfLines={1}>
+              {label}
+            </Text>
+            {sub ? (
+              <Text
+                variant="labelSmall"
+                color={selected ? colors.red : colors.textDim}
+                upper
+                numberOfLines={1}
+              >
+                {sub}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+        <Pressable
+          onPress={() => preview(id)}
+          accessibilityRole="button"
+          accessibilityLabel={`${t.settings.testVoice}: ${label}`}
+          style={({ pressed }) => [styles.play, pressed && styles.pressed]}
+          disabled={!voice.enabled}
+        >
+          <Text variant="h3" color={voice.enabled ? colors.text : colors.textDim} style={styles.playGlyph}>
+            ▶
+          </Text>
+        </Pressable>
+      </View>
+    );
+  };
+  const groups: { gender: VoiceGender; label: string }[] = [
+    { gender: 'female', label: t.settings.voiceGroupFemale },
+    { gender: 'male', label: t.settings.voiceGroupMale },
+    { gender: 'unknown', label: t.settings.voiceGroupOther },
   ];
+  const tiers: VoiceTier[] = ['premium', 'native'];
 
   return (
     <View style={styles.root} testID="voice-picker">
@@ -91,52 +135,37 @@ export function VoicePicker({ locale, voice, onPick }: VoicePickerProps) {
           {t.settings.voiceNone}
         </Text>
       ) : null}
-      {rows.map((row) => {
-        const selected = (voice.voiceId ?? undefined) === row.id;
+      {renderRow(
+        undefined,
+        t.settings.voiceAuto,
+        autoVoice ? `${displayName(autoVoice)} · ${qualityLabel(autoVoice)}` : '',
+      )}
+      {groups.map((group) => {
+        const genderVoices = voices.filter((item) => item.gender === group.gender);
+        if (!genderVoices.length) return null;
         return (
-          <View key={row.id ?? 'auto'} style={styles.row}>
-            <Pressable
-              onPress={() => onPick(row.id)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              style={({ pressed }) => [
-                styles.select,
-                selected && styles.selectSelected,
-                pressed && styles.pressed,
-              ]}
-              testID={`voice-${row.id ?? 'auto'}`}
-            >
-              <View style={styles.selectText}>
-                <Text
-                  variant="bodyBold"
-                  color={selected ? colors.text : colors.textMuted}
-                  numberOfLines={1}
+          <View key={group.gender} style={styles.group} testID={`voice-group-${group.gender}`}>
+            <Text variant="labelSmall" color={colors.textDim} upper style={styles.groupTitle}>
+              {group.label}
+            </Text>
+            {tiers.map((tier) => {
+              const tierVoices = genderVoices.filter((item) => item.tier === tier);
+              if (!tierVoices.length) return null;
+              return (
+                <View
+                  key={tier}
+                  style={styles.tier}
+                  testID={`voice-tier-${tier}-${group.gender}`}
                 >
-                  {row.label}
-                </Text>
-                {row.sub ? (
-                  <Text
-                    variant="labelSmall"
-                    color={selected ? colors.red : colors.textDim}
-                    upper
-                    numberOfLines={1}
-                  >
-                    {row.sub}
+                  <Text variant="labelSmall" color={colors.textDim} upper style={styles.tierTitle}>
+                    {tierLabel(tier)}
                   </Text>
-                ) : null}
-              </View>
-            </Pressable>
-            <Pressable
-              onPress={() => preview(row.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`${t.settings.testVoice}: ${row.label}`}
-              style={({ pressed }) => [styles.play, pressed && styles.pressed]}
-              disabled={!voice.enabled}
-            >
-              <Text variant="h3" color={voice.enabled ? colors.text : colors.textDim}>
-                ▶
-              </Text>
-            </Pressable>
+                  {tierVoices.map((item) =>
+                    renderRow(item.id, displayName(item), qualityLabel(item)),
+                  )}
+                </View>
+              );
+            })}
           </View>
         );
       })}
@@ -151,6 +180,10 @@ export function VoicePicker({ locale, voice, onPick }: VoicePickerProps) {
 
 const styles = StyleSheet.create({
   root: { gap: spacing.xs, paddingVertical: spacing.sm },
+  group: { gap: spacing.xs, marginTop: spacing.sm },
+  groupTitle: { marginBottom: spacing.xxs },
+  tier: { gap: spacing.xs, marginTop: spacing.xxs },
+  tierTitle: { paddingLeft: spacing.sm, marginBottom: spacing.xxs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   select: {
     flex: 1,
@@ -173,6 +206,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  playGlyph: { fontFamily: fonts.headingUpright, fontStyle: 'normal' },
   pressed: { opacity: 0.6 },
   hint: { marginTop: spacing.xs },
 });
