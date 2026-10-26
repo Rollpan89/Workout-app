@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { getSpeech } from '@/adapters';
@@ -22,9 +23,11 @@ import { VoicePicker } from './VoicePicker';
 
 const GOALS: readonly WorkoutGoal[] = ['strength', 'hypertrophy', 'endurance', 'fatLoss', 'mobility'];
 const RATES = [0.8, 0.9, 1.0, 1.1, 1.25] as const;
+const PIPER_POC_ENABLED = __DEV__ || process.env.EXPO_PUBLIC_PIPER_POC === '1';
 
 export function SettingsScreen() {
   const { t } = useI18n();
+  const router = useRouter();
   const settings = useSettingsStore((s) => s.settings);
   const setLocale = useSettingsStore((s) => s.setLocale);
   const setInteractionLevel = useSettingsStore((s) => s.setInteractionLevel);
@@ -187,6 +190,20 @@ export function SettingsScreen() {
       <View style={styles.testVoice}>
         <Button label={t.settings.testVoice} variant="secondary" onPress={testVoice} disabled={!settings.voice.enabled} />
       </View>
+
+      {PIPER_POC_ENABLED ? (
+        <>
+          <SectionTitle title={t.settings.piperPocTitle} />
+          <Card>
+            <Text variant="bodySmall" color={colors.textMuted}>
+              {t.settings.piperPocHint}
+            </Text>
+            <View style={styles.testVoice}>
+              <Button label={t.settings.piperPocOpen} variant="secondary" onPress={() => router.push('/piper-lab')} />
+            </View>
+          </Card>
+        </>
+      ) : null}
 
       <SectionTitle title={t.settings.profile} />
       <Card padding={0}>

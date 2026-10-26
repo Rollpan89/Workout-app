@@ -27,6 +27,7 @@ import Library from '../../app/(tabs)/index';
 import Settings from '../../app/(tabs)/settings';
 import Session from '../../app/session';
 import Summary from '../../app/summary';
+import PiperLab from '../../app/piper-lab';
 import WorkoutBuilder from '../../app/builder/[id]';
 import SessionDetail from '../../app/history/[id]';
 import WorkoutDetail from '../../app/workout/[id]';
@@ -53,6 +54,7 @@ const routes = {
   'history/[id]': SessionDetail,
   session: Session,
   summary: Summary,
+  'piper-lab': PiperLab,
 };
 
 beforeEach(async () => {
@@ -123,11 +125,15 @@ describe('PulseCoach – core flow', () => {
     // another double-tap resumes (fake timers → Date.now() is frozen, so both taps fall within the window)
     fireEvent.press(screen.getByTestId('phase-display'));
     expect(useSessionStore.getState().snapshot?.phase).toBe('working');
-    jest.advanceTimersByTime(1_000);
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
     fireEvent.press(screen.getByTestId('phase-display'));
     fireEvent.press(screen.getByTestId('phase-display'));
     expect(useSessionStore.getState().snapshot?.phase).toBe('paused');
-    jest.advanceTimersByTime(1_000);
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
     fireEvent.press(screen.getByTestId('phase-display'));
     fireEvent.press(screen.getByTestId('phase-display'));
     expect(useSessionStore.getState().snapshot?.phase).toBe('working');
