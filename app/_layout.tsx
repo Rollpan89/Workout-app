@@ -12,7 +12,6 @@ import { useSessionStore } from '@/state/sessionStore';
 import { useSettingsStore } from '@/state/settingsStore';
 import { colors } from '@/theme';
 import { ErrorBoundary } from '@/ui/components/ErrorBoundary';
-import { SystemBars } from '@/ui/components/SystemBars';
 
 // Keep the native splash visible until fonts + persisted state are ready.
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -34,8 +33,6 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        {/* Immersive mode: no status bar / navigation bar, swipe to peek. */}
-        <SystemBars />
         <ErrorBoundary onReset={() => useSessionStore.getState().reset()}>
           <AppStack />
         </ErrorBoundary>
@@ -95,8 +92,7 @@ function AppStack() {
       <Stack.Screen name="workout/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="history/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="builder/[id]" options={{ animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="import" options={{ animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="admin/index" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="piper-lab" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade' }} />
       <Stack.Screen name="summary" options={{ gestureEnabled: false, animation: 'fade' }} />
     </Stack>

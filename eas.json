@@ -17,6 +17,15 @@
         "buildType": "apk"
       }
     },
+    "piper-poc": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_PIPER_POC": "1"
+      }
+    },
     "production": {
       "autoIncrement": true
     }
