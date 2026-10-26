@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { INTERACTION_LEVELS, type InteractionLevel } from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 import { Text } from '@/ui/primitives';
 
 export interface InteractionPickerProps {
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   selected: { borderColor: colors.red, backgroundColor: colors.redSoft },
   pressed: { opacity: 0.85 },
   optionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  icon: { fontSize: 18 },
+  icon: { fontFamily: fonts.headingUpright, fontStyle: 'normal', fontSize: 18 },
   dot: {
     marginLeft: 'auto',
     width: 14,

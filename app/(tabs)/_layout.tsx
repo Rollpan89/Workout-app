@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 4,
   },
-  iconFocused: { backgroundColor: colors.red, transform: [{ skewX: '-12deg' }] },
-  glyph: { fontSize: 15, lineHeight: 18 },
+  iconFocused: { backgroundColor: colors.red },
+  glyph: { fontFamily: fonts.headingUpright, fontStyle: 'normal', fontSize: 15, lineHeight: 18 },
 });

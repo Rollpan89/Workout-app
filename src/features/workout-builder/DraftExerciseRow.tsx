@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import type { DraftExercise, Exercise } from '@/core/domain';
 import { clamp, DRAFT_LIMITS } from '@/core/domain';
 import { useI18n } from '@/hooks/useI18n';
-import { colors, radius, spacing } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 import { Card, Chip, Text } from '@/ui/primitives';
 
 export interface DraftExerciseRowProps {
@@ -128,7 +128,7 @@ function Stepper({
           accessibilityLabel={`${label} −`}
           testID={`${testID}-dec`}
         >
-          <Text variant="h3" color={colors.text}>
+          <Text variant="h3" color={colors.text} style={styles.stepperIcon}>
             −
           </Text>
         </Pressable>
@@ -142,7 +142,7 @@ function Stepper({
           accessibilityLabel={`${label} +`}
           testID={`${testID}-inc`}
         >
-          <Text variant="h3" color={colors.text}>
+          <Text variant="h3" color={colors.text} style={styles.stepperIcon}>
             +
           </Text>
         </Pressable>
@@ -217,6 +217,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   stepBtn: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
+  stepperIcon: { fontFamily: fonts.headingUpright, fontStyle: 'normal' },
   stepValue: { fontSize: 24, lineHeight: 26, minWidth: 36, textAlign: 'center' },
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginLeft: -3 },
 });
