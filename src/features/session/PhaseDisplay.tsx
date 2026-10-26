@@ -151,10 +151,16 @@ function targetText(snapshot: SessionSnapshot, t: ReturnType<typeof useI18n>['t'
 /** Punches (scale bump) each time the value changes – a visual "tick". */
 function BigNumber({ value, color }: { value: string; color: string }) {
   const scale = useSharedValue(1);
+  const isIcon = value === '▶';
   useEffect(() => {
     scale.value = withSequence(withTiming(1.12, { duration: 70 }), withTiming(1, { duration: 160 }));
   }, [value, scale]);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }, { skewX: '-6deg' }] }));
+  const style = useAnimatedStyle(
+    () => ({
+      transform: isIcon ? [{ scale: scale.value }] : [{ scale: scale.value }, { skewX: '-6deg' }],
+    }),
+    [isIcon],
+  );
 
   const long = value.length > 3;
   return (
@@ -163,7 +169,7 @@ function BigNumber({ value, color }: { value: string; color: string }) {
       // coach already speaks every rep / countdown – announcing it twice
       // through VoiceOver/TalkBack would drown the coach.
       accessibilityLiveRegion="none"
-      style={[styles.big, { color }, long && styles.bigSmall, style]}
+      style={[styles.big, isIcon && styles.bigIcon, { color }, long && styles.bigSmall, style]}
       numberOfLines={1}
       adjustsFontSizeToFit
       testID="big-number"
@@ -184,6 +190,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
   },
+  bigIcon: { fontFamily: fonts.displayUpright, fontStyle: 'normal' },
   bigSmall: { fontSize: 88, lineHeight: 96,  },
   bar: { marginTop: spacing.sm },
   cue: { marginTop: spacing.md, alignSelf: 'stretch' },

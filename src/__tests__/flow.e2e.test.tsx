@@ -326,9 +326,12 @@ describe('PulseCoach – core flow', () => {
 
     // Voice picker lists the device voices for Swedish, best first, and lets the user pin one
     await waitFor(() => expect(screen.getByTestId('voice-picker')).toBeTruthy());
-    // "Automatiskt" resolves to the premium voice (ranked above the compact one) and shows its name
-    expect(within(screen.getByTestId('voice-auto')).getByText('Klara (Premium)')).toBeTruthy();
-    expect(screen.getAllByText('Klara (Premium)')).toHaveLength(2);
+    // Native and premium voices are separated within the female group; the premium voice gets a quality label.
+    expect(within(screen.getByTestId('voice-auto')).getByText('Klara · Premium')).toBeTruthy();
+    expect(screen.getByTestId('voice-group-female')).toBeTruthy();
+    expect(screen.getByTestId('voice-tier-premium-female')).toBeTruthy();
+    expect(screen.getByTestId('voice-tier-native-female')).toBeTruthy();
+    expect(screen.getByText('Klara')).toBeTruthy();
     expect(screen.getByText('Alva')).toBeTruthy();
     expect(screen.queryByText('Samantha')).toBeNull(); // English voice hidden while locale is sv
     fireEvent.press(screen.getByTestId('voice-com.apple.voice.premium.sv-SE.Klara'));
