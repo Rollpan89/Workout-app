@@ -13,7 +13,6 @@ import {
   type VoiceEnergy,
   type WorkoutGoal,
 } from '@/core/domain';
-import { useRouter } from 'expo-router';
 
 import { useI18n } from '@/hooks/useI18n';
 import { useSettingsStore } from '@/state/settingsStore';
@@ -31,7 +30,6 @@ const PIPER_POC_ENABLED = __DEV__ || process.env.EXPO_PUBLIC_PIPER_POC === '1';
 export function SettingsScreen() {
   const router = useRouter();
   const { t } = useI18n();
-  const router = useRouter();
   const settings = useSettingsStore((s) => s.settings);
   const setLocale = useSettingsStore((s) => s.setLocale);
   const setInteractionLevel = useSettingsStore((s) => s.setInteractionLevel);
