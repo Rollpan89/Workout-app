@@ -462,6 +462,29 @@ describe('SessionEngine – checkpoint / restore', () => {
     expect(snap.sessionElapsedSeconds).toBeCloseTo(4, 0);
   });
 
+  it('copies the load and a heavy mark onto the completed set', () => {
+    const clock = new FakeClock();
+    const engine = new SessionEngine({
+      plan: plan(),
+      interactionLevel: 'manual',
+      now: clock.now,
+      getReadySeconds: 0,
+    });
+    engine.start();
+    engine.tick(clock.now());
+    engine.confirmStart();
+    engine.setLoad(60);
+    engine.markHeavy(true);
+    engine.markRep();
+    engine.completeSet();
+    expect(engine.snapshot.stats.completedSets[0]).toMatchObject({
+      reps: 1,
+      weightKg: 60,
+      targetReps: 5,
+      feltHeavy: true,
+    });
+  });
+
   it('refuses to restore a checkpoint from another workout', () => {
     const clock = new FakeClock();
     const engine = new SessionEngine({ plan: plan(), interactionLevel: 'handsFree', now: clock.now });

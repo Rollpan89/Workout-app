@@ -10,11 +10,14 @@ import {
   DRAFT_LIMITS,
   draftRounds,
   estimateDraftMinutes,
+  exerciseSection,
   validateDraft,
+  withSection,
   WORKOUT_ACCENTS,
   type CustomWorkoutDraft,
   type Difficulty,
   type DraftExercise,
+  type DraftSection,
   type DraftValidationError,
   type Exercise,
   type WorkoutGoal,
@@ -71,6 +74,7 @@ export function WorkoutBuilderScreen() {
     return { ...store.newDraft(), name: prefillName ?? '' };
   });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSection, setPickerSection] = useState<DraftSection>('main');
   const [info, setInfo] = useState<Exercise | undefined>();
   const [errors, setErrors] = useState<readonly DraftValidationError[]>([]);
   const [saving, setSaving] = useState(false);
@@ -93,15 +97,28 @@ export function WorkoutBuilderScreen() {
 
   const moveExercise = (index: number, direction: -1 | 1) => {
     const list = [...draft!.exercises];
-    const target = index + direction;
-    if (target < 0 || target >= list.length) return;
-    const [item] = list.splice(index, 1);
-    list.splice(target, 0, item!);
-    update({ exercises: list });
+    const item = list[index];
+    if (!item) return;
+    const section = exerciseSection(item);
+    const peers = list
+      .map((row, i) => ({ row, i }))
+      .filter(({ row }) => exerciseSection(row) === section);
+    const pos = peers.findIndex(({ i }) => i === index);
+    const swap = peers[pos + direction];
+    if (!swap) return;
+    const next = [...list];
+    next[index] = swap.row;
+    next[swap.i] = item;
+    update({ exercises: next });
+  };
+
+  const openPicker = (section: DraftSection) => {
+    setPickerSection(section);
+    setPickerOpen(true);
   };
 
   const addExercise = (exercise: Exercise) => {
-    update({ exercises: [...draft!.exercises, defaultDraftExercise(exercise)] });
+    update({ exercises: [...draft!.exercises, withSection(defaultDraftExercise(exercise), pickerSection)] });
     setPickerOpen(false);
   };
 
@@ -227,58 +244,81 @@ export function WorkoutBuilderScreen() {
         ))}
       </View>
 
-      <SectionTitle title={t.builder.exercises} color={tone.main} />
-      {draft.exercises.length === 0 ? (
-        <Card style={[styles.emptyCard, errors.includes('noExercises') && styles.cardError]}>
-          <Text variant="body" color={colors.textMuted} align="center">
-            {t.builder.emptyList}
-          </Text>
-        </Card>
-      ) : (
-        draft.exercises.map((item, index) => {
-          const exercise = getExercise(item.exerciseId);
-          if (!exercise) return null;
-          return (
-            <DraftExerciseRow
-              key={`${item.exerciseId}-${index}`}
-              index={index}
-              total={draft.exercises.length}
-              item={item}
-              exercise={exercise}
-              color={tone.main}
-              onChange={(next) => updateExercise(index, next)}
-              onRemove={() => removeExercise(index)}
-              onMove={(dir) => moveExercise(index, dir)}
-              onOpenInfo={() => setInfo(exercise)}
+      {(['warmup', 'main', 'stretch'] as const).map((section) => {
+        const rows = draft.exercises
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => exerciseSection(item) === section);
+        const title = section === 'warmup' ? t.builder.warmup : section === 'stretch' ? t.builder.stretch : t.builder.training;
+        const hint = section === 'warmup' ? t.builder.warmupHint : section === 'stretch' ? t.builder.stretchHint : t.builder.trainingHint;
+        const addLabel = section === 'warmup' ? t.builder.addWarmup : section === 'stretch' ? t.builder.addStretch : t.builder.addExercise;
+        const addTestId = section === 'warmup' ? 'builder-add-warmup' : section === 'stretch' ? 'builder-add-stretch' : 'builder-add-exercise';
+        const atLimit = draft.exercises.length >= DRAFT_LIMITS.exercises.max;
+        return (
+          <View key={section}>
+            <SectionTitle title={title} hint={hint} color={tone.main} />
+            {rows.length === 0 ? (
+              <Card
+                style={[
+                  styles.emptyCard,
+                  section === 'main' && draft.exercises.length === 0 && errors.includes('noExercises') && styles.cardError,
+                ]}
+              >
+                <Text variant="body" color={colors.textMuted} align="center">
+                  {section === 'main' && draft.exercises.length === 0 ? t.builder.emptyList : t.builder.sectionEmpty}
+                </Text>
+              </Card>
+            ) : (
+              rows.map(({ item, index }, position) => {
+                const exercise = getExercise(item.exerciseId);
+                if (!exercise) return null;
+                return (
+                  <DraftExerciseRow
+                    key={`${section}-${item.exerciseId}-${index}`}
+                    index={position}
+                    total={rows.length}
+                    rowId={index}
+                    item={item}
+                    exercise={exercise}
+                    color={tone.main}
+                    onChange={(next) => updateExercise(index, withSection(next, section))}
+                    onRemove={() => removeExercise(index)}
+                    onMove={(dir) => moveExercise(index, dir)}
+                    onOpenInfo={() => setInfo(exercise)}
+                  />
+                );
+              })
+            )}
+            <Button
+              label={`+ ${addLabel}`}
+              variant="secondary"
+              fullWidth
+              onPress={() => openPicker(section)}
+              disabled={atLimit}
+              testID={addTestId}
             />
-          );
-        })
-      )}
-      <Button
-        label={`+ ${t.builder.addExercise}`}
-        variant="secondary"
-        fullWidth
-        onPress={() => setPickerOpen(true)}
-        disabled={draft.exercises.length >= DRAFT_LIMITS.exercises.max}
-        testID="builder-add-exercise"
-      />
-
-      <SectionTitle title={t.builder.rounds} color={tone.main} />
-      <View style={styles.transitionRow}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <Chip
-            key={n}
-            label={n === 1 ? t.builder.roundsOne : f(t.builder.roundsN, { n })}
-            selected={draftRounds(draft) === n}
-            color={tone.main}
-            onPress={() => update({ rounds: n })}
-            testID={`builder-rounds-${n}`}
-          />
-        ))}
-      </View>
-      <Text variant="bodySmall" color={colors.textMuted} style={styles.hint}>
-        {t.builder.roundsHint}
-      </Text>
+            {section === 'main' ? (
+              <>
+                <SectionTitle title={t.builder.rounds} color={tone.main} />
+                <View style={styles.transitionRow}>
+                  {Array.from({ length: DRAFT_LIMITS.rounds.max }, (_, i) => i + 1).map((n) => (
+                    <Chip
+                      key={n}
+                      label={n === 1 ? t.builder.roundsOne : f(t.builder.roundsN, { n })}
+                      selected={draftRounds(draft) === n}
+                      color={tone.main}
+                      onPress={() => update({ rounds: n })}
+                      testID={`builder-rounds-${n}`}
+                    />
+                  ))}
+                </View>
+                <Text variant="bodySmall" color={colors.textMuted} style={styles.hint}>
+                  {t.builder.roundsHint}
+                </Text>
+              </>
+            ) : null}
+          </View>
+        );
+      })}
 
       <SectionTitle title={t.builder.transition} color={tone.main} />
       <View style={styles.transitionRow}>
@@ -344,6 +384,7 @@ const styles = StyleSheet.create({
   swatch: { minWidth: 40 },
   swatchSelected: { transform: [{ scale: 1.15 }] },
   chips: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },
+  sectionHint: { marginTop: -spacing.sm, marginBottom: spacing.sm },
   emptyCard: { marginBottom: spacing.md },
   cardError: { borderWidth: 1, borderColor: colors.red },
   transitionRow: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm, marginLeft: -3 },

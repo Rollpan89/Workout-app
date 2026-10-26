@@ -120,7 +120,7 @@ describe('custom workout drafts', () => {
     expect(estimateDraftMinutes(draft, find)).toBe(Math.round((110 + 30 + 65) / 60)); // ≈ 3
   });
 
-  it('copies a multi-block workout, expanding rounds into a flat list', () => {
+  it('copies a multi-block workout without folding warm-up into the circuit', () => {
     const warmup: WorkoutBlock = {
       id: 'wu',
       title: lz('Uppvärmning', 'Warm-up'),
@@ -149,13 +149,18 @@ describe('custom workout drafts', () => {
     expect(draft.accent).toBe('magenta');
     expect(draft.goal).toBe(source.goal);
     expect(draft.transitionSeconds).toBe(10);
-    expect(draft.rounds).toBeUndefined();
-    expect(draft.exercises.map((e) => e.exerciseId)).toEqual(['plank', 'squat', 'plank', 'squat', 'plank']);
+    // Warm-up stays out of the circuit; the training rounds are kept, not expanded.
+    expect(draft.rounds).toBe(2);
+    expect(draft.exercises.map((e) => e.exerciseId)).toEqual(['plank', 'squat', 'plank']);
+    expect(draft.exercises[0]?.section).toBe('warmup');
+    expect(draft.exercises[1]?.section).toBeUndefined();
     expect(draft.exercises[1]?.restSeconds).toBe(15); // block default
     expect(draft.exercises[2]?.restSeconds).toBe(5); // per-exercise override
 
     // Round-trips to a runnable workout with the same amount of work
     const compiled = compileDraft(draft, find);
+    expect(compiled.blocks.map((b) => b.kind)).toEqual(['warmup', 'main']);
+    expect(compiled.blocks[1]?.rounds).toBe(2);
     expect(buildSessionPlan(compiled, find).steps).toHaveLength(buildSessionPlan(source, find).steps.length);
   });
 });
@@ -191,6 +196,7 @@ describe('draft rounds (circuits)', () => {
       ],
     };
     const compiled = compileDraft(draft, find);
+    expect(compiled.blocks[0]?.title).toEqual({ sv: 'Cirkel', en: 'Circuit' });
     expect(compiled.blocks[0]?.rounds).toBe(3);
     const steps = buildSessionPlan(compiled, find).steps;
     expect(steps).toHaveLength(6);
@@ -205,7 +211,40 @@ describe('draft rounds (circuits)', () => {
     expect(draftRounds({ rounds: 99 })).toBe(DRAFT_LIMITS.rounds.max);
     expect(draftRounds({ rounds: Number.NaN })).toBe(1);
     const compiled = compileDraft({ ...createEmptyDraft('cw10', 'red', NOW), name: 'x', exercises: [{ exerciseId: 'squat', sets: 1, prescription: { kind: 'reps', reps: 5 }, restSeconds: 0 }] }, find);
+    expect(compiled.blocks[0]?.title).toEqual({ sv: 'Ditt pass', en: 'Your workout' });
     expect(compiled.blocks[0]?.rounds).toBeUndefined();
+  });
+
+  it('repeats only the training section, leaving warm-up and stretch at one pass', () => {
+    const draft = {
+      ...createEmptyDraft('cw12', 'orange', NOW),
+      name: 'Delat',
+      rounds: 3,
+      transitionSeconds: 10,
+      exercises: [
+        { exerciseId: 'jumping-jack', sets: 1, prescription: { kind: 'time' as const, seconds: 20 }, restSeconds: 0, section: 'warmup' as const },
+        { exerciseId: 'squat', sets: 1, prescription: { kind: 'reps' as const, reps: 10 }, restSeconds: 10 },
+        { exerciseId: 'plank', sets: 1, prescription: { kind: 'time' as const, seconds: 20 }, restSeconds: 0, section: 'stretch' as const },
+      ],
+    };
+    const compiled = compileDraft(draft, find);
+    expect(compiled.blocks.map((b) => b.kind)).toEqual(['warmup', 'main', 'stretch']);
+    expect(compiled.blocks[0]?.rounds).toBeUndefined();
+    expect(compiled.blocks[1]?.title).toEqual({ sv: 'Träning', en: 'Training' });
+    expect(compiled.blocks[1]?.rounds).toBe(3);
+    expect(compiled.blocks[2]?.title).toEqual({ sv: 'Stretch', en: 'Stretch' });
+    expect(compiled.blocks[2]?.rounds).toBeUndefined();
+    expect(buildSessionPlan(compiled, find).steps.map((s) => s.exercise.id)).toEqual([
+      'jumping-jack',
+      'squat',
+      'squat',
+      'squat',
+      'plank',
+    ]);
+    const once = estimateDraftMinutes({ ...draft, rounds: 1 }, find);
+    const thrice = estimateDraftMinutes(draft, find);
+    expect(thrice).toBeGreaterThan(once);
+    expect(thrice).toBeLessThan(once * 3);
   });
 
   it('keeps the rounds of a single-circuit source when copying instead of flattening it', () => {

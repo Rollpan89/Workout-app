@@ -102,6 +102,11 @@ export interface CompletedSetRecord {
   readonly reps: number; // reps done, or 0 for time-based
   readonly seconds: number; // work seconds actually spent
   readonly intensity: IntensityLevel;
+  /** External load used for this set. Omitted when the user left it unloaded. */
+  readonly weightKg?: number;
+  /** Prescribed reps, so a short set does not earn a heavier suggestion. */
+  readonly targetReps?: number;
+  readonly feltHeavy?: boolean;
 }
 
 export interface SessionStats {

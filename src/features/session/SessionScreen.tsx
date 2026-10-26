@@ -6,6 +6,7 @@ import { Alert, Platform, Pressable, StyleSheet, useWindowDimensions, View } fro
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { PlanStep, SessionSnapshot } from '@/core/engine/types';
+import { formatKg, showsLoadControl } from '@/core/load/load';
 import { useI18n } from '@/hooks/useI18n';
 import { formatDuration } from '@/i18n';
 import { haptic } from '@/adapters/haptics/haptics';
@@ -24,6 +25,8 @@ export function SessionScreen() {
   const keepAwake = useSettingsStore((s) => s.settings.keepScreenAwake);
   const snapshot = useSessionStore((s) => s.snapshot);
   const plan = useSessionStore((s) => s.plan);
+  const loadKg = useSessionStore((s) => s.loadKg);
+  const feltHeavy = useSessionStore((s) => s.feltHeavy);
   // Actions are stable references on the store – read them once.
   const actions = useMemo(() => {
     const s = useSessionStore.getState();
@@ -36,6 +39,8 @@ export function SessionScreen() {
       skipStep: s.skipStep,
       adjustIntensity: s.adjustIntensity,
       adjustTempo: s.adjustTempo,
+      adjustLoad: s.adjustLoad,
+      markHeavy: s.markHeavy,
       stop: s.stop,
     };
   }, []);
@@ -120,6 +125,14 @@ export function SessionScreen() {
 
   const controls = (
     <View style={[styles.bottom, landscape && styles.bottomLandscape]}>
+      <LoadControl
+        snapshot={snapshot}
+        nextStep={nextStep}
+        loadKg={loadKg}
+        feltHeavy={feltHeavy}
+        onChange={actions.adjustLoad}
+        onHeavy={actions.markHeavy}
+      />
       <IntensityMeter value={snapshot.intensity} onChange={actions.adjustIntensity} compact />
       {snapshot.interactionLevel !== 'manual' && snapshot.target?.kind === 'reps' ? (
         <TempoControl value={snapshot.tempoFactor} onChange={actions.adjustTempo} />
@@ -232,6 +245,72 @@ function useDoubleTap(onDoubleTap: () => void): () => void {
 }
 
 /** Slower / faster rep count. Shown as "Tempo −  1.0×  +" so it reads at arm's length. */
+/**
+ * Weight for the exercise they are about to lift. During rest the store
+ * already points `loadKg` at the next exercise, so the plates can be changed
+ * before the announcement.
+ */
+function LoadControl({
+  snapshot,
+  nextStep,
+  loadKg,
+  feltHeavy,
+  onChange,
+  onHeavy,
+}: {
+  snapshot: SessionSnapshot;
+  nextStep?: PlanStep;
+  loadKg: number;
+  feltHeavy: boolean;
+  onChange: (delta: 1 | -1) => void;
+  onHeavy: () => void;
+}) {
+  const { t, locale } = useI18n();
+  const phase = snapshot.phase;
+  const resting = phase === 'resting' || (phase === 'paused' && snapshot.pausedFrom === 'resting');
+  const step = resting && nextStep ? nextStep : snapshot.step;
+  if (!step || (!showsLoadControl(step.exercise.equipment) && loadKg <= 0)) return null;
+  const label = loadKg > 0 ? `${formatKg(loadKg, locale)} kg` : '–';
+  return (
+    <View style={styles.loadRow}>
+      <View
+        style={styles.loadAdjust}
+        accessibilityRole="adjustable"
+        accessibilityLabel={t.session.weight}
+        accessibilityValue={{ text: label }}
+      >
+        <Button
+          label="−"
+          variant="ghost"
+          size="sm"
+          onPress={() => onChange(-1)}
+          accessibilityLabel={t.session.weightDown}
+          testID="load-dec"
+        />
+        <Text variant="label" color={colors.text} upper testID="load-value">
+          {t.session.weight} {label}
+        </Text>
+        <Button
+          label="+"
+          variant="ghost"
+          size="sm"
+          onPress={() => onChange(1)}
+          accessibilityLabel={t.session.weightUp}
+          testID="load-inc"
+        />
+      </View>
+      <Button
+        label={t.session.heavy}
+        variant={feltHeavy ? 'primary' : 'secondary'}
+        size="sm"
+        onPress={onHeavy}
+        disabled={loadKg <= 0}
+        testID="load-heavy"
+      />
+    </View>
+  );
+}
+
 function TempoControl({ value, onChange }: { value: number; onChange: (delta: 1 | -1) => void }) {
   const { t } = useI18n();
   return (
@@ -373,6 +452,8 @@ const styles = StyleSheet.create({
   primaryRow: { marginTop: spacing.xs },
   secondaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   tempoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -spacing.xs },
+  loadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  loadAdjust: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   manualRow: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },
   overlay: {

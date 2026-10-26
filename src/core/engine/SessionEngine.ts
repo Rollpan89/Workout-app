@@ -80,6 +80,9 @@ export class SessionEngine {
 
   private repsDone = 0;
   private tempoFactor = 1;
+  /** External load for the set in progress. Set by the session store, copied onto the log. */
+  private loadKg?: number;
+  private feltHeavy = false;
   private lastRepEmittedAt = 0; // ms, phase-relative
   private halfwayEmitted = false;
 
@@ -281,6 +284,19 @@ export class SessionEngine {
 
   get tempo(): number {
     return this.tempoFactor;
+  }
+
+  /**
+   * External load for the current exercise. `undefined` clears it.
+   * The store owns the suggestion; the engine only records what was actually used.
+   */
+  setLoad(kg: number | undefined): void {
+    this.loadKg = kg !== undefined && kg > 0 ? kg : undefined;
+  }
+
+  /** User marked the set heavy — next time repeats the load instead of progressing. */
+  markHeavy(on: boolean): void {
+    this.feltHeavy = on;
   }
 
   setInteractionLevel(level: InteractionLevel): void {
@@ -573,6 +589,9 @@ export class SessionEngine {
       reps: target?.kind === 'reps' ? this.repsDone : 0,
       seconds,
       intensity: this.intensity,
+      ...(this.loadKg && this.loadKg > 0 ? { weightKg: this.loadKg } : {}),
+      ...(target?.kind === 'reps' ? { targetReps: target.reps } : {}),
+      ...(this.feltHeavy ? { feltHeavy: true } : {}),
     };
     this.accumulateWork();
     this.stats = { ...this.stats, completedSets: [...this.stats.completedSets, record] };

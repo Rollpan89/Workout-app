@@ -2,13 +2,20 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { DraftExercise, Exercise } from '@/core/domain';
 import { clamp, DRAFT_LIMITS } from '@/core/domain';
+import { formatKg, showsLoadControl, stepWeightKg } from '@/core/load/load';
 import { useI18n } from '@/hooks/useI18n';
 import { colors, radius, spacing } from '@/theme';
 import { Card, Chip, Text } from '@/ui/primitives';
 
 export interface DraftExerciseRowProps {
+  /** Position within the section – drives the badge and the ↑/↓ limits. */
   index: number;
   total: number;
+  /**
+   * Stable id for tests. Defaults to `index`. Pass the index in the full
+   * draft list when several sections are on screen, so ids stay unique.
+   */
+  rowId?: number;
   item: DraftExercise;
   exercise: Exercise;
   color: string;
@@ -19,8 +26,8 @@ export interface DraftExerciseRowProps {
 }
 
 /** One editable exercise line in the builder: sets · reps/seconds · rest. */
-export function DraftExerciseRow({ index, total, item, exercise, color, onChange, onRemove, onMove, onOpenInfo }: DraftExerciseRowProps) {
-  const { t, lz } = useI18n();
+export function DraftExerciseRow({ index, total, rowId = index, item, exercise, color, onChange, onRemove, onMove, onOpenInfo }: DraftExerciseRowProps) {
+  const { t, lz, locale } = useI18n();
   const isReps = item.prescription.kind === 'reps';
   const value = item.prescription.kind === 'reps' ? item.prescription.reps : item.prescription.seconds;
 
@@ -41,7 +48,7 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
   };
 
   return (
-    <Card padding={spacing.md} style={styles.card} testID={`draft-row-${index}`}>
+    <Card padding={spacing.md} style={styles.card} testID={`draft-row-${rowId}`}>
       <View style={styles.header}>
         <View style={[styles.indexBadge, { backgroundColor: color }]}>
           <Text variant="labelSmall" color={colors.bg}>
@@ -57,9 +64,9 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
           </Text>
         </Pressable>
         <View style={styles.orderButtons}>
-          <IconButton label="↑" a11y={t.builder.moveUp} disabled={index === 0} onPress={() => onMove(-1)} testID={`draft-row-${index}-up`} />
-          <IconButton label="↓" a11y={t.builder.moveDown} disabled={index === total - 1} onPress={() => onMove(1)} testID={`draft-row-${index}-down`} />
-          <IconButton label="✕" a11y={t.builder.removeExercise} onPress={onRemove} danger testID={`draft-row-${index}-remove`} />
+          <IconButton label="↑" a11y={t.builder.moveUp} disabled={index === 0} onPress={() => onMove(-1)} testID={`draft-row-${rowId}-up`} />
+          <IconButton label="↓" a11y={t.builder.moveDown} disabled={index === total - 1} onPress={() => onMove(1)} testID={`draft-row-${rowId}-down`} />
+          <IconButton label="✕" a11y={t.builder.removeExercise} onPress={onRemove} danger testID={`draft-row-${rowId}-remove`} />
         </View>
       </View>
 
@@ -69,7 +76,7 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
           value={item.sets}
           color={color}
           onChange={(n) => onChange({ ...item, sets: clamp(n, DRAFT_LIMITS.sets.min, DRAFT_LIMITS.sets.max) })}
-          testID={`draft-row-${index}-sets`}
+          testID={`draft-row-${rowId}-sets`}
         />
         <Stepper
           label={isReps ? t.builder.reps : t.builder.seconds}
@@ -77,7 +84,7 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
           step={isReps ? 1 : 5}
           color={color}
           onChange={setValue}
-          testID={`draft-row-${index}-value`}
+          testID={`draft-row-${rowId}-value`}
         />
         <Stepper
           label={`${t.builder.rest} (${t.common.seconds})`}
@@ -88,6 +95,20 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
           testID={`draft-row-${index}-rest`}
         />
       </View>
+
+      {showsLoadControl(exercise.equipment) || (item.weightKg ?? 0) > 0 ? (
+        <View style={styles.controls}>
+          <Stepper
+            label={t.builder.weight}
+            value={item.weightKg ?? 0}
+            step={2.5}
+            color={color}
+            format={(n) => (n > 0 ? formatKg(n, locale) : '–')}
+            onChange={(n) => setWeight(item, n, exercise, onChange)}
+            testID={`draft-row-${rowId}-weight`}
+          />
+        </View>
+      ) : null}
 
       <View style={styles.modeRow}>
         <Text variant="labelSmall" color={colors.textDim} upper>
@@ -100,11 +121,30 @@ export function DraftExerciseRow({ index, total, item, exercise, color, onChange
   );
 }
 
+function setWeight(
+  item: DraftExercise,
+  raw: number,
+  exercise: Exercise,
+  onChange: (next: DraftExercise) => void,
+): void {
+  const current = item.weightKg ?? 0;
+  const delta: 1 | -1 = raw >= current ? 1 : -1;
+  const next = stepWeightKg(current, delta, exercise.equipment, DRAFT_LIMITS.weight.max);
+  if (next <= 0) {
+    if (item.weightKg === undefined) return;
+    const { weightKg: _ignored, ...rest } = item;
+    onChange(rest);
+    return;
+  }
+  onChange({ ...item, weightKg: next });
+}
+
 function Stepper({
   label,
   value,
   step = 1,
   color,
+  format,
   onChange,
   testID,
 }: {
@@ -112,6 +152,7 @@ function Stepper({
   value: number;
   step?: number;
   color: string;
+  format?: (value: number) => string;
   onChange: (next: number) => void;
   testID: string;
 }) {

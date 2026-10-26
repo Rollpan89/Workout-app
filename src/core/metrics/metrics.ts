@@ -1,7 +1,7 @@
 import type { Exercise, MuscleGroup } from '../domain/exercise';
-import type { SessionLog } from '../domain/session';
+import type { LoggedSet, SessionLog } from '../domain/session';
 import type { UserProfile } from '../domain/settings';
-import type { SessionPlan, SessionSnapshot } from '../engine/types';
+import type { CompletedSetRecord, SessionPlan, SessionSnapshot } from '../engine/types';
 import { createId } from '../utils/id';
 
 export type ExerciseLookup = (id: string) => Exercise | undefined;
@@ -99,6 +99,7 @@ export function buildSessionLog(
 ): SessionLog {
   const metrics = computeSessionMetrics(snapshot, profile, lookup);
   const startedAt = snapshot.startedAt ?? now;
+  const sets = toLoggedSets(snapshot.stats.completedSets);
   return {
     id: createId('session'),
     workoutId: plan.workout.id,
@@ -108,7 +109,19 @@ export function buildSessionLog(
     workSeconds: Math.round(snapshot.stats.workSeconds),
     completed,
     ...metrics,
+    ...(sets.length > 0 ? { sets } : {}),
   };
+}
+
+function toLoggedSets(records: readonly CompletedSetRecord[]): LoggedSet[] {
+  return records.map((set) => ({
+    exerciseId: set.exerciseId,
+    reps: set.reps,
+    seconds: Math.round(set.seconds),
+    ...(set.weightKg && set.weightKg > 0 ? { weightKg: set.weightKg } : {}),
+    ...(set.targetReps && set.targetReps > 0 ? { targetReps: set.targetReps } : {}),
+    ...(set.feltHeavy ? { feltHeavy: true as const } : {}),
+  }));
 }
 
 /** Aggregate helpers for the history screen. */

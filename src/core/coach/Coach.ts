@@ -2,6 +2,7 @@ import { resolveLocalized, SPEECH_LANGUAGE_TAG, type Locale } from '../domain/lo
 import { effectiveVoiceParams, type VoiceSettings } from '../domain/settings';
 import type { SessionEngine } from '../engine/SessionEngine';
 import type { PlanStep, SessionSnapshot } from '../engine/types';
+import type { LoadCue } from '../load/load';
 import { intensityLabelKey, resolvePrescription } from '../intensity/intensity';
 import type { Unsubscribe } from '../utils/emitter';
 import { getCoachScript, spokenNumber, type CoachScript } from './script';
@@ -17,6 +18,11 @@ export interface CoachOptions {
   readonly haptic?: (kind: 'rep' | 'go' | 'done' | 'warn') => void;
   /** Injectable randomness (tests pass a constant). */
   readonly random?: () => number;
+  /**
+   * Local weight for the exercise about to start. Absent, or an empty cue,
+   * means the announcement says nothing about load.
+   */
+  readonly loadCue?: (step: PlanStep) => LoadCue | undefined;
 }
 
 /** Exercises with a cadence at or above this get "ner… upp" tempo words. */
@@ -61,6 +67,7 @@ export class Coach {
   private script: CoachScript;
   private readonly haptic?: CoachOptions['haptic'];
   private readonly random: () => number;
+  private readonly loadCue?: CoachOptions['loadCue'];
   private subscriptions: Unsubscribe[] = [];
   private planSteps: readonly PlanStep[] = [];
   private lastMotivationAt = -Infinity;
@@ -92,6 +99,7 @@ export class Coach {
     this.script = getCoachScript(options.locale);
     this.haptic = options.haptic;
     this.random = options.random ?? Math.random;
+    this.loadCue = options.loadCue;
   }
 
   attach(engine: SessionEngine): void {
@@ -149,6 +157,9 @@ export class Coach {
         lines.push(this.script.exerciseIntro(name, targetText));
         if (step.totalSets > 1) lines.push(this.script.setOf(step.setNumber, step.totalSets));
         lines.push(...this.preCountdownInstructions(step));
+        // Weight, plates and last session come last, so they are what the
+        // athlete hears immediately before the countdown.
+        lines.push(...this.loadLines(step));
         this.sayThenStartCountdown(engine, lines.join(' '));
       }),
 
@@ -438,6 +449,21 @@ export class Coach {
 
   private exerciseName(step: PlanStep): string {
     return resolveLocalized(step.exercise.name, this.locale);
+  }
+
+  /** Weight, plate callout and last session. Empty when this exercise has no load. */
+  private loadLines(step: PlanStep): string[] {
+    const cue = this.loadCue?.(step);
+    if (!cue || (!cue.todayKg && !cue.lastKg)) return [];
+    const lines: string[] = [];
+    if (cue.todayKg && cue.todayKg > 0) lines.push(this.script.weight(cue.todayKg));
+    if (cue.emptyBar) lines.push(this.script.emptyBar);
+    else if (cue.plates && cue.plates.length > 0) lines.push(this.script.plates(cue.plates));
+    if (cue.lastKg && cue.lastKg > 0) lines.push(this.script.lastTime(cue.lastKg, cue.lastReps ?? 0));
+    if (cue.increased) lines.push(cue.small ? this.script.loadUpSmall : this.script.loadUp);
+    else if (cue.waiting) lines.push(this.script.loadWait);
+    else if (cue.held) lines.push(this.script.loadHold);
+    return lines;
   }
 
   /** Builds the requested execution guidance, without ever omitting the exercise introduction. */

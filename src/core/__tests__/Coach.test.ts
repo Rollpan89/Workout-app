@@ -510,6 +510,38 @@ describe('Coach – lifecycle', () => {
     expect(texts().at(-1)).toBe('Passet är klart. Grymt jobbat, Erik!');
   });
 
+  it('says the weight, the plates and last session before the countdown', () => {
+    const clock = new FakeClock();
+    const engine = new SessionEngine({
+      plan: plan(),
+      interactionLevel: 'handsFree',
+      now: clock.now,
+      getReadySeconds: 3,
+    });
+    const speech = new SilentSpeech();
+    const coach = new Coach({
+      speech,
+      locale: 'sv',
+      voice: { ...DEFAULT_SETTINGS.voice, motivation: false },
+      random: () => 0.99,
+      loadCue: () => ({
+        todayKg: 60,
+        lastKg: 57.5,
+        lastReps: 8,
+        plates: [20],
+        increased: true,
+        held: false,
+      }),
+    });
+    coach.attach(engine);
+    engine.start();
+    const intro = speech.spoken.map((utterance) => utterance.text).join(' ');
+    expect(intro).toContain('60 kilo.');
+    expect(intro).toContain('Tjugo på varje sida.');
+    expect(intro).toContain('Förra gången 57,5 kilo, 8 repetitioner.');
+    expect(intro).toContain('Baslyft. Vi ökar.');
+  });
+
   it('detaches cleanly', () => {
     const { engine, texts, coach, run, speech } = setup();
     engine.start();
