@@ -17,7 +17,7 @@
     "android:device": "expo run:android --variant release --device"
   },
   "dependencies": {
-    "@dr.pogodin/react-native-fs": "^2.41.0",
+    "@dr.pogodin/react-native-fs": "~2.40.4",
     "@expo-google-fonts/barlow": "^0.4.1",
     "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@expo/ngrok": "^4.1.0",

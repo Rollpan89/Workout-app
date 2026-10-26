@@ -18,6 +18,12 @@ The first prototype targets Android and uses the US English male `norman-medium`
 
 The premium purchase flow is not implemented yet. This review build makes the POC screen available for testing; production entitlement checks will be added with the app's purchase flow.
 
+## Native build compatibility
+
+The app uses Expo SDK 57 / React Native 0.86.3, so `@dr.pogodin/react-native-fs` is pinned to `~2.40.4`. Version 2.41.0 added `ArrayBuffer` to its TurboModule spec, which requires a newer React Native Codegen; keep the pin until the Expo SDK supports that API ([RNFS 2.41.0 notes](https://github.com/birdofpreyru/react-native-fs/releases/tag/v2.41.0), [React Native 0.88 notes](https://reactnative.dev/blog/2026/10/19/react-native-0.88)).
+
+SDK 57 configures the native splash screen through the `expo-splash-screen` plugin; do not add the removed top-level `splash` or `newArchEnabled` fields to `app.json`.
+
 ## Building an Android review APK
 
 **Expo Go is a client app, not an APK builder, and cannot load the Piper native module.** Use a custom native build.
